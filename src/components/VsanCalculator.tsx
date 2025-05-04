@@ -1,41 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Cpu, Server, AlertTriangle, HardDrive, Network, MemoryStick as Memory, Layers, Activity, Power } from 'lucide-react';
+import React, { useState } from 'react';
+import { Cpu, Server, AlertTriangle, HardDrive, Network, MemoryStick as Memory } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { supabase } from '../lib/supabase';
-
-const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
-
-const DISK_SIZES = [
-  240,      // 240 GB
-  480,      // 480 GB
-  960,      // 960 GB
-  1966.08,  // 1.92 TB
-  2048,     // 2 TB
-  3932.16,  // 3.84 TB
-  4096,     // 4 TB
-  6144,     // 6 TB
-  7864.32,  // 7.68 TB
-  8192,     // 8 TB
-  10240,    // 10 TB
-  12288,    // 12 TB
-  14336,    // 14 TB
-  15728.64, // 15.36 TB
-  16384,    // 16 TB
-  18432,    // 18 TB
-  20480,    // 20 TB
-  22528,    // 22 TB
-  24576,    // 24 TB
-];
-
-interface Processor {
-  id: string;
-  name: string;
-  cores: number;
-  frequency: string;
-  generation: string;
-  spec_int_base: number;
-  tdp: number;
-}
 
 interface VirtualMachine {
   name: string;
@@ -45,34 +10,35 @@ interface VirtualMachine {
   count: number;
 }
 
-interface VsanNode {
-  id: string;
-  name: string;
-  diskGroups: number;
-  disksPerGroup: number;
-  cacheSize: number;
-  capacitySize: number;
-  deduplication: boolean;
-  compression: boolean;
-}
-
 interface VsanConfig {
   ftt: 1 | 2 | 3; // Failures to Tolerate
   deduplication: boolean;
   compression: boolean;
   encryption: boolean;
-  stretchedCluster: boolean;
-  witnessNode: boolean;
-  coreRatio: number;
+  coresPerSocket: number;
+  socketsPerHost: number;
+  memoryPerHost: number;
   maxUtilization: number;
 }
 
-const RAID_FACTORS = {
-  'RAID 1': 0.5,
-  'RAID 5': 0.75,
-  'RAID 6': 0.67,
-  'RAID 10': 0.5
-};
+interface VsanRecommendation {
+  minimumHosts: number;
+  recommendedHosts: number;
+  hostsForFTT: number;
+  hostsForVMs: number;
+  hostsForResources: number;
+  resourceUtilization: {
+    cpu: number;
+    memory: number;
+    storage: number;
+  };
+  warnings: string[];
+  maxVMs: number;
+  storageOverhead: {
+    multiplier: number;
+    percentage: number;
+  };
+}
 
 const formatStorage = (gb: number): string => {
   if (gb >= 1024) {
@@ -87,10 +53,9 @@ const formatStorage = (gb: number): string => {
   return `${gb} GB`;
 };
 
+const COLORS = ['#3B82F6', '#10B981', '#F59E0B'];
+
 const VsanCalculator = () => {
-  const [processors, setProcessors] = useState<Processor[]>([]);
-  const [selectedProcessor, setSelectedProcessor] = useState<Processor | null>(null);
-  const [nodes, setNodes] = useState<VsanNode[]>([]);
   const [vms, setVms] = useState<VirtualMachine[]>([
     { name: 'VM-1', vCPUs: 2, memory: 4, storage: 1024, count: 1 }
   ]);
@@ -99,33 +64,126 @@ const VsanCalculator = () => {
     deduplication: false,
     compression: true,
     encryption: false,
-    stretchedCluster: false,
-    witnessNode: false,
-    coreRatio: 4,
+    coresPerSocket: 12,
+    socketsPerHost: 2,
+    memoryPerHost: 768,
     maxUtilization: 90
   });
 
-  useEffect(() => {
-    const fetchProcessors = async () => {
-      const { data, error } = await supabase
-        .from('processors')
-        .select('*')
-        .order('generation', { ascending: true })
-        .order('spec_int_base', { ascending: false });
+  const calculateTotalResources = () => {
+    return vms.reduce((acc, vm) => ({
+      vCPUs: acc.vCPUs + (vm.vCPUs * vm.count),
+      memory: acc.memory + (vm.memory * vm.count),
+      storage: acc.storage + (vm.storage * vm.count)
+    }), { vCPUs: 0, memory: 0, storage: 0 });
+  };
 
-      if (error) {
-        console.error('Error fetching processors:', error);
-        return;
+  const calculateUsableCapacity = (hosts: number) => {
+    const capacityPerHost = 4 * 7.68 * 1024; // 4 disk groups * 7.68 TB * 1024 GB/TB
+    const totalRawCapacity = capacityPerHost * hosts;
+    
+    // Apply FTT reduction
+    let usableCapacity = totalRawCapacity;
+    switch (vsanConfig.ftt) {
+      case 1: usableCapacity *= 0.5; break;  // RAID-1
+      case 2: usableCapacity *= 0.33; break; // RAID-6
+      case 3: usableCapacity *= 0.25; break; // Triple mirroring
+    }
+
+    // Apply data reduction
+    if (vsanConfig.deduplication && vsanConfig.compression) {
+      usableCapacity *= 2; // 2:1 data reduction
+    } else if (vsanConfig.compression) {
+      usableCapacity *= 1.5; // 1.5:1 compression
+    }
+
+    return usableCapacity;
+  };
+
+  const calculateVsanRecommendation = (): VsanRecommendation => {
+    const totalResources = calculateTotalResources();
+    const totalVMs = vms.reduce((sum, vm) => sum + vm.count, 0);
+    const warnings: string[] = [];
+
+    // Calculate minimum hosts based on FTT
+    const hostsForFTT = 2 * vsanConfig.ftt + 1;
+    
+    // Calculate storage overhead based on FTT
+    const storageOverhead = {
+      multiplier: vsanConfig.ftt + 1,
+      percentage: vsanConfig.ftt * 100
+    };
+    
+    // Calculate minimum hosts based on different factors
+    const vmsPerHost = 100; // Conservative limit
+    const hostsForVMs = Math.ceil(totalVMs / vmsPerHost);
+    
+    // Calculate total cores per host
+    const coresPerHost = vsanConfig.coresPerSocket * vsanConfig.socketsPerHost;
+    const vCPUsPerHost = coresPerHost * 2; // Assuming 2:1 vCPU:pCPU ratio
+    
+    // Hosts needed for resources
+    const hostsForCPU = Math.ceil(totalResources.vCPUs / vCPUsPerHost);
+    const hostsForMemory = Math.ceil(totalResources.memory / vsanConfig.memoryPerHost);
+    
+    // Start with minimum hosts needed
+    let minimumHosts = Math.max(hostsForFTT, hostsForVMs, hostsForCPU, hostsForMemory);
+    
+    // Calculate resource utilization with minimum hosts
+    let storageUtilization = 0;
+    let usableCapacity = 0;
+    
+    // Keep increasing hosts until storage utilization is acceptable
+    while (true) {
+      usableCapacity = calculateUsableCapacity(minimumHosts);
+      storageUtilization = (totalResources.storage * storageOverhead.multiplier / usableCapacity) * 100;
+      
+      if (storageUtilization <= vsanConfig.maxUtilization) {
+        break;
+      }
+      
+      minimumHosts++;
       }
 
-      setProcessors(data);
-      if (data.length > 0) {
-        setSelectedProcessor(data[0]);
-      }
+    // Calculate resource utilization percentages
+    const resourceUtilization = {
+      cpu: (totalResources.vCPUs / (minimumHosts * vCPUsPerHost)) * 100,
+      memory: (totalResources.memory / (minimumHosts * vsanConfig.memoryPerHost)) * 100,
+      storage: storageUtilization
     };
 
-    fetchProcessors();
-  }, []);
+    // Add warnings if needed
+    if (resourceUtilization.cpu > vsanConfig.maxUtilization) {
+      warnings.push(`CPU utilization (${resourceUtilization.cpu.toFixed(1)}%) exceeds recommended maximum of ${vsanConfig.maxUtilization}%`);
+    }
+    if (resourceUtilization.memory > vsanConfig.maxUtilization) {
+      warnings.push(`Memory utilization (${resourceUtilization.memory.toFixed(1)}%) exceeds recommended maximum of ${vsanConfig.maxUtilization}%`);
+    }
+    if (resourceUtilization.storage > vsanConfig.maxUtilization) {
+      warnings.push(`Storage utilization (${resourceUtilization.storage.toFixed(1)}%) exceeds recommended maximum of ${vsanConfig.maxUtilization}%`);
+    }
+
+    // Calculate maximum VMs based on resources
+    const maxVMsByCPU = Math.floor((minimumHosts * vCPUsPerHost) / totalResources.vCPUs * totalVMs);
+    const maxVMsByMemory = Math.floor((minimumHosts * vsanConfig.memoryPerHost) / totalResources.memory * totalVMs);
+    const maxVMsByStorage = Math.floor((usableCapacity / (totalResources.storage * storageOverhead.multiplier)) * totalVMs);
+    const maxVMsByHosts = minimumHosts * vmsPerHost;
+
+    // The limiting factor is the smallest of these values
+    const maxVMs = Math.min(maxVMsByCPU, maxVMsByMemory, maxVMsByStorage, maxVMsByHosts);
+
+    return {
+      minimumHosts,
+      recommendedHosts: minimumHosts + 1,
+      hostsForFTT,
+      hostsForVMs,
+      hostsForResources: Math.max(hostsForCPU, hostsForMemory),
+      resourceUtilization,
+      warnings,
+      maxVMs,
+      storageOverhead
+    };
+  };
 
   const addVM = () => {
     setVms([...vms, {
@@ -151,564 +209,313 @@ const VsanCalculator = () => {
     setVms(newVMs);
   };
 
-  const addNode = () => {
-    const newNode: VsanNode = {
-      id: Date.now().toString(),
-      name: `Node ${nodes.length + 1}`,
-      diskGroups: 1,
-      disksPerGroup: 4,
-      cacheSize: 3932.16, // 3.84 TB
-      capacitySize: 7864.32, // 7.68 TB
-      deduplication: vsanConfig.deduplication,
-      compression: vsanConfig.compression
-    };
-    setNodes([...nodes, newNode]);
-  };
-
-  const removeNode = (id: string) => {
-    setNodes(nodes.filter(node => node.id !== id));
-  };
-
-  const updateNode = (id: string, updates: Partial<VsanNode>) => {
-    setNodes(nodes.map(node => 
-      node.id === id ? { ...node, ...updates } : node
-    ));
-  };
-
-  const calculateTotalResources = () => {
-    return vms.reduce((acc, vm) => ({
-      vCPUs: acc.vCPUs + (vm.vCPUs * vm.count),
-      memory: acc.memory + (vm.memory * vm.count),
-      storage: acc.storage + (vm.storage * vm.count)
-    }), { vCPUs: 0, memory: 0, storage: 0 });
-  };
-
-  const calculateRawCapacity = () => {
-    return nodes.reduce((total, node) => {
-      const capacityPerGroup = node.disksPerGroup * node.capacitySize;
-      return total + (capacityPerGroup * node.diskGroups);
-    }, 0);
-  };
-
-  const calculateUsableCapacity = () => {
-    const rawCapacity = calculateRawCapacity();
-    let usableCapacity = rawCapacity;
-
-    // Apply FTT reduction
-    switch (vsanConfig.ftt) {
-      case 1: usableCapacity *= 0.5; break;  // RAID-1
-      case 2: usableCapacity *= 0.33; break; // RAID-6
-      case 3: usableCapacity *= 0.25; break; // Triple mirroring
-    }
-
-    // Apply data reduction if enabled
-    if (vsanConfig.deduplication && vsanConfig.compression) {
-      usableCapacity *= 2; // Estimated 2:1 data reduction ratio
-    } else if (vsanConfig.compression) {
-      usableCapacity *= 1.5; // Estimated 1.5:1 compression ratio
-    }
-
-    return usableCapacity;
-  };
-
-  const calculateResourceUtilization = () => {
-    if (!selectedProcessor || nodes.length === 0) return { cpu: 0, memory: 0, storage: 0 };
-    
-    const totalResources = calculateTotalResources();
-    const maxUtilizationFactor = vsanConfig.maxUtilization / 100;
-    
-    // Calculate total available resources
-    const totalCores = nodes.length * selectedProcessor.cores * 2;
-    const totalVCPUs = totalCores * vsanConfig.coreRatio;
-    const usableStorage = calculateUsableCapacity();
-    
-    // Calculate utilization percentages
-    const cpuUtilization = (totalResources.vCPUs / totalVCPUs) * 100;
-    const storageUtilization = (totalResources.storage / usableStorage) * 100;
-    
-    return {
-      cpu: Math.min(cpuUtilization, 100),
-      storage: Math.min(storageUtilization, 100)
-    };
-  };
-
-  const utilization = calculateResourceUtilization();
+  const recommendation = calculateVsanRecommendation();
   const totalResources = calculateTotalResources();
 
-  if (!selectedProcessor) {
-    return <div>Loading processors...</div>;
-  }
+  const getResourceData = () => {
+    const totalResources = calculateTotalResources();
+    const coresPerHost = vsanConfig.coresPerSocket * vsanConfig.socketsPerHost;
+    const vCPUsPerHost = coresPerHost * 2;
+    const totalVCPUs = recommendation.minimumHosts * vCPUsPerHost;
+    const totalMemory = recommendation.minimumHosts * vsanConfig.memoryPerHost;
+    const totalStorage = calculateUsableCapacity(recommendation.minimumHosts);
+
+    return [
+      {
+        name: 'CPU',
+        used: totalResources.vCPUs,
+        total: totalVCPUs,
+        color: COLORS[0]
+      },
+      {
+        name: 'Memory',
+        used: totalResources.memory,
+        total: totalMemory,
+        color: COLORS[1]
+      },
+      {
+        name: 'Storage',
+        used: totalResources.storage,
+        total: totalStorage,
+        color: COLORS[2]
+      }
+    ];
+  };
 
   return (
-    <div className="flex flex-row-reverse gap-8">
-      {/* Right Side - Configuration */}
-      <div className="w-[400px] flex-shrink-0">
-        <div className="sticky top-2">
-          <div className="bg-slate-800/50 backdrop-blur-sm p-6 rounded-xl">
+    <div className="flex h-screen">
+      {/* Left Side - Static Configuration Panel */}
+      <div className="w-[400px] flex-shrink-0 bg-slate-800/50 backdrop-blur-sm p-6 overflow-y-auto">
             <h2 className="text-xl font-semibold mb-6">vSAN Configuration</h2>
             
-            <div className="space-y-6 max-h-[calc(100vh-8rem)] overflow-y-auto pr-2">
-              <div className="space-y-4">
+        <div className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium mb-2">Failures to Tolerate</label>
+            <select
+              value={vsanConfig.ftt}
+              onChange={(e) => setVsanConfig({ ...vsanConfig, ftt: Number(e.target.value) as 1 | 2 | 3 })}
+              className="w-full bg-slate-700/50 border border-slate-600 rounded px-3 py-2"
+            >
+              <option value={1}>1 Failure (RAID-1)</option>
+              <option value={2}>2 Failures (RAID-6)</option>
+              <option value={3}>3 Failures (Triple Mirror)</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">
-                    Maximum Resource Utilization (%)
-                  </label>
+              <label className="block text-sm font-medium mb-2">Cores per Socket</label>
                   <input
                     type="number"
-                    value={vsanConfig.maxUtilization}
-                    onChange={(e) => setVsanConfig({ ...vsanConfig, maxUtilization: Math.min(100, Math.max(0, Number(e.target.value))) })}
-                    className="w-full bg-slate-700 rounded-lg px-4 py-2 text-white"
-                    min="0"
-                    max="100"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">
-                    Core Ratio (vCPU:pCPU)
-                  </label>
-                  <input
-                    type="number"
-                    value={vsanConfig.coreRatio}
-                    onChange={(e) => setVsanConfig({ ...vsanConfig, coreRatio: parseInt(e.target.value) })}
-                    className="w-full bg-slate-700 rounded-lg px-4 py-2 text-white"
-                    min="1"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">
-                    Processor Model
-                  </label>
-                  <select
-                    value={selectedProcessor.id}
-                    onChange={(e) => {
-                      const processor = processors.find(p => p.id === e.target.value);
-                      if (processor) setSelectedProcessor(processor);
-                    }}
-                    className="w-full bg-slate-700 rounded-lg px-4 py-2 text-white"
-                  >
-                    {processors.map((processor) => (
-                      <option key={processor.id} value={processor.id}>
-                        {processor.name} ({processor.cores} cores, {processor.frequency}, {processor.tdp}W)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="deduplication"
-                      checked={vsanConfig.deduplication}
-                      onChange={(e) => setVsanConfig({ ...vsanConfig, deduplication: e.target.checked })}
-                      className="rounded border-slate-500"
-                    />
-                    <label htmlFor="deduplication" className="text-sm text-slate-300">
-                      Enable Deduplication
-                    </label>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="compression"
-                      checked={vsanConfig.compression}
-                      onChange={(e) => setVsanConfig({ ...vsanConfig, compression: e.target.checked })}
-                      className="rounded border-slate-500"
-                    />
-                    <label htmlFor="compression" className="text-sm text-slate-300">
-                      Enable Compression
-                    </label>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="encryption"
-                      checked={vsanConfig.encryption}
-                      onChange={(e) => setVsanConfig({ ...vsanConfig, encryption: e.target.checked })}
-                      className="rounded border-slate-500"
-                    />
-                    <label htmlFor="encryption" className="text-sm text-slate-300">
-                      Enable Encryption
-                    </label>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="stretchedCluster"
-                      checked={vsanConfig.stretchedCluster}
-                      onChange={(e) => setVsanConfig({ ...vsanConfig, stretchedCluster: e.target.checked })}
-                      className="rounded border-slate-500"
-                    />
-                    <label htmlFor="stretchedCluster" className="text-sm text-slate-300">
-                      Stretched Cluster
-                    </label>
-                  </div>
-
-                  {vsanConfig.stretchedCluster && (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id="witnessNode"
-                        checked={vsanConfig.witnessNode}
-                        onChange={(e) => setVsanConfig({ ...vsanConfig, witnessNode: e.target.checked })}
-                        className="rounded border-slate-500"
-                      />
-                      <label htmlFor="witnessNode" className="text-sm text-slate-300">
-                        Include Witness Node
-                      </label>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="border-t border-slate-700 pt-4">
-                <h3 className="text-lg font-semibold mb-4">Virtual Machines</h3>
-                <div className="space-y-4">
-                  {vms.map((vm, index) => (
-                    <div key={index} className="bg-slate-700 p-4 rounded-lg space-y-4">
-                      <div className="flex justify-between items-center">
-                        <h4 className="font-medium">Virtual Machine {index + 1}</h4>
-                        {vms.length > 1 && (
-                          <button
-                            onClick={() => removeVM(index)}
-                            className="text-red-400 hover:text-red-300"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-slate-300 mb-1">
-                            VM Name
-                          </label>
-                          <input
-                            type="text"
-                            value={vm.name}
-                            onChange={(e) => updateVM(index, 'name', e.target.value)}
-                            className="w-full bg-slate-600 rounded-lg px-4 py-2 text-white"
-                            placeholder="Enter VM name"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-slate-300 mb-1">
-                            Number of VMs
-                          </label>
-                          <input
-                            type="number"
-                            value={vm.count}
-                            onChange={(e) => updateVM(index, 'count', e.target.value)}
-                            className="w-full bg-slate-600 rounded-lg px-4 py-2 text-white"
-                            min="1"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-slate-300 mb-1">
-                            vCPUs
-                          </label>
-                          <input
-                            type="number"
-                            value={vm.vCPUs}
-                            onChange={(e) => updateVM(index, 'vCPUs', e.target.value)}
-                            className="w-full bg-slate-600 rounded-lg px-4 py-2 text-white"
-                            min="1"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-slate-300 mb-1">
-                            Memory (GB)
-                          </label>
-                          <input
-                            type="number"
-                            value={vm.memory}
-                            onChange={(e) => updateVM(index, 'memory', e.target.value)}
-                            className="w-full bg-slate-600 rounded-lg px-4 py-2 text-white"
-                            min="1"
-                          />
-                        </div>
-
-                        <div className="col-span-2">
-                          <label className="block text-sm font-medium text-slate-300 mb-1">
-                            Storage (GB)
-                          </label>
-                          <input
-                            type="number"
-                            value={vm.storage}
-                            onChange={(e) => updateVM(index, 'storage', e.target.value)}
-                            className="w-full bg-slate-600 rounded-lg px-4 py-2 text-white"
-                            min="1"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="text-sm text-slate-400 bg-slate-800/50 p-3 rounded-lg">
-                        <div className="grid grid-cols-3 gap-2">
-                          <div>Total vCPUs: {vm.vCPUs * vm.count}</div>
-                          <div>Total Memory: {formatStorage(vm.memory * vm.count)}</div>
-                          <div>Total Storage: {formatStorage(vm.storage * vm.count)}</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-
-                  <button
-                    onClick={addVM}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 transition-colors"
-                  >
-                    Add Another VM
-                  </button>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-700 pt-4">
-                <h3 className="text-lg font-semibold mb-4">Nodes</h3>
-                <div className="space-y-4">
-                  {nodes.map((node) => (
-                    <div key={node.id} className="bg-slate-700 p-4 rounded-lg space-y-4">
-                      <div className="flex justify-between items-center">
-                        <h4 className="font-medium">{node.name}</h4>
-                        <button
-                          onClick={() => removeNode(node.id)}
-                          className="text-red-400 hover:text-red-300"
-                        >
-                          Remove
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-slate-300 mb-1">
-                            Disk Groups
-                          </label>
-                          <input
-                            type="number"
-                            value={node.diskGroups}
-                            onChange={(e) => updateNode(node.id, { diskGroups: Number(e.target.value) })}
-                            className="w-full bg-slate-600 rounded-lg px-4 py-2 text-white"
-                            min="1"
-                            max="5"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-slate-300 mb-1">
-                            Disks per Group
-                          </label>
-                          <input
-                            type="number"
-                            value={node.disksPerGroup}
-                            onChange={(e) => updateNode(node.id, { disksPerGroup: Number(e.target.value) })}
-                            className="w-full bg-slate-600 rounded-lg px-4 py-2 text-white"
-                            min="1"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-slate-300 mb-1">
-                            Cache Disk Size
-                          </label>
-                          <select
-                            value={node.cacheSize}
-                            onChange={(e) => updateNode(node.id, { cacheSize: Number(e.target.value) })}
-                            className="w-full bg-slate-600 rounded-lg px-4 py-2 text-white"
-                          >
-                            {DISK_SIZES.map((size) => (
-                              <option key={size} value={size}>
-                                {formatStorage(size)}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-slate-300 mb-1">
-                            Capacity Disk Size
-                          </label>
-                          <select
-                            value={node.capacitySize}
-                            onChange={(e) => updateNode(node.id, { capacitySize: Number(e.target.value) })}
-                            className="w-full bg-slate-600 rounded-lg px-4 py-2 text-white"
-                          >
-                            {DISK_SIZES.map((size) => (
-                              <option key={size} value={size}>
-                                {formatStorage(size)}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="text-sm text-slate-400 bg-slate-800/50 p-3 rounded-lg">
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>Cache: {formatStorage(node.cacheSize * node.diskGroups)}</div>
-                          <div>Capacity: {formatStorage(node.capacitySize * node.diskGroups * node.disksPerGroup)}</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-
-                  <button
-                    onClick={addNode}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 transition-colors"
-                  >
-                    Add Node
-                  </button>
-                </div>
-              </div>
+                value={vsanConfig.coresPerSocket}
+                onChange={(e) => setVsanConfig({ ...vsanConfig, coresPerSocket: Number(e.target.value) })}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded px-3 py-2"
+                min="4"
+                max="64"
+              />
             </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Sockets per Host</label>
+              <select
+                value={vsanConfig.socketsPerHost}
+                onChange={(e) => setVsanConfig({ ...vsanConfig, socketsPerHost: Number(e.target.value) })}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded px-3 py-2"
+              >
+                <option value={1}>1 Socket</option>
+                <option value={2}>2 Sockets</option>
+              </select>
+            </div>
+                </div>
+
+                <div>
+            <label className="block text-sm font-medium mb-2">Memory per Host (GB)</label>
+                  <input
+                    type="number"
+              value={vsanConfig.memoryPerHost}
+              onChange={(e) => setVsanConfig({ ...vsanConfig, memoryPerHost: Number(e.target.value) })}
+              className="w-full bg-slate-700/50 border border-slate-600 rounded px-3 py-2"
+              min="64"
+              max="2048"
+                  />
+                </div>
+
+                <div>
+            <label className="block text-sm font-medium mb-2">Maximum Utilization (%)</label>
+            <input
+              type="number"
+              value={vsanConfig.maxUtilization}
+              onChange={(e) => setVsanConfig({ ...vsanConfig, maxUtilization: Number(e.target.value) })}
+              className="w-full bg-slate-700/50 border border-slate-600 rounded px-3 py-2"
+              min="50"
+              max="100"
+            />
+          </div>
+        </div>
+
+        {/* Resource Utilization Chart */}
+        <div className="mt-8">
+          <h3 className="text-lg font-semibold mb-4">Resource Utilization</h3>
+          <div className="h-[200px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={getResourceData()}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={80}
+                  paddingAngle={5}
+                  dataKey="used"
+                >
+                  {getResourceData().map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value: number, name: string, props: any) => {
+                    const total = props.payload.total;
+                    const percentage = ((value / total) * 100).toFixed(1);
+                    return [`${value} (${percentage}%)`, name];
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-4 space-y-2">
+            {getResourceData().map((entry, index) => (
+              <div key={index} className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: entry.color }} />
+                  <span className="text-sm">{entry.name}</span>
+                </div>
+                <span className="text-sm">
+                  {entry.used} / {entry.total}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Left Side - Dashboard */}
-      <div className="flex-1">
-        <div className="sticky top-2 space-y-8">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl">
-              <div className="text-sm text-slate-400 mb-1">Total Nodes</div>
-              <div className="text-2xl font-bold">{nodes.length}</div>
-              <div className="text-sm text-slate-400">
-                {vsanConfig.stretchedCluster && vsanConfig.witnessNode ? '(+1 Witness)' : ''}
-              </div>
-            </div>
+      {/* Right Side - Scrollable Content */}
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-4xl mx-auto">
+          {/* Recommendations */}
+          <div className="bg-slate-800/50 backdrop-blur-sm p-6 rounded-xl mb-6">
+            <h2 className="text-xl font-semibold mb-4">Recommendations</h2>
             
-            <div className="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl">
-              <div className="text-sm text-slate-400 mb-1">Total vCPUs</div>
-              <div className="text-2xl font-bold">{totalResources.vCPUs}</div>
-              <div className="text-sm text-slate-400">
-                {nodes.length > 0 && selectedProcessor ? 
-                  `${(totalResources.vCPUs / (nodes.length * selectedProcessor.cores * 2 * vsanConfig.coreRatio)).toFixed(2)}:1 ratio` : 
-                  'No nodes'}
-              </div>
-            </div>
-            
-            <div className="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl">
-              <div className="text-sm text-slate-400 mb-1">Total Memory</div>
-              <div className="text-2xl font-bold">{formatStorage(totalResources.memory)}</div>
-              <div className="text-sm text-slate-400">Required</div>
-            </div>
-            
-            <div className="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl">
-              <div className="text-sm text-slate-400 mb-1">Total Storage</div>
-              <div className="text-2xl font-bold">{formatStorage(totalResources.storage)}</div>
-              <div className="text-sm text-slate-400">Required</div>
-            </div>
-          </div>
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-slate-700/30 p-4 rounded-lg">
+                <h3 className="text-sm font-medium text-slate-400 mb-1">Minimum Hosts</h3>
+                <p className="text-2xl font-bold">{recommendation.minimumHosts}</p>
+                <p className="text-sm text-slate-400">Recommended: {recommendation.recommendedHosts} (N+1)</p>
+                  </div>
 
+              <div className="bg-slate-700/30 p-4 rounded-lg">
+                <h3 className="text-sm font-medium text-slate-400 mb-1">Maximum VMs</h3>
+                <p className="text-2xl font-bold">{recommendation.maxVMs}</p>
+                <p className="text-sm text-slate-400">Based on current configuration</p>
+                  </div>
+
+              <div className="bg-slate-700/30 p-4 rounded-lg">
+                <h3 className="text-sm font-medium text-slate-400 mb-1">Storage Overhead</h3>
+                <p className="text-2xl font-bold">{recommendation.storageOverhead.multiplier}x</p>
+                <p className="text-sm text-slate-400">+{recommendation.storageOverhead.percentage}% overhead</p>
+              </div>
+                  </div>
+
+            <div className="mt-6 grid grid-cols-2 gap-6">
+              <div className="bg-slate-700/30 p-4 rounded-lg">
+                <h3 className="text-sm font-medium text-slate-400 mb-1">FTT Configuration</h3>
+                <p className="text-2xl font-bold">FTT={vsanConfig.ftt}</p>
+                <p className="text-sm text-slate-400">
+                  {vsanConfig.ftt === 1 ? 'Tolerates 1 failure (3 hosts minimum)' :
+                   vsanConfig.ftt === 2 ? 'Tolerates 2 failures (5 hosts minimum)' :
+                   'Tolerates 3 failures (7 hosts minimum)'}
+                </p>
+                  </div>
+
+              <div className="bg-slate-700/30 p-4 rounded-lg">
+                <h3 className="text-sm font-medium text-slate-400 mb-1">Required Hosts for FTT</h3>
+                <p className="text-2xl font-bold">{recommendation.hostsForFTT}</p>
+                <p className="text-sm text-slate-400">2×FTT + 1 = {2 * vsanConfig.ftt} + 1</p>
+                    </div>
+                </div>
+
+            {recommendation.warnings.length > 0 && (
+              <div className="mt-6 p-4 bg-red-900/20 border border-red-800 rounded">
+                <h3 className="text-sm font-medium text-red-400 mb-2">Warnings</h3>
+                <ul className="space-y-1">
+                  {recommendation.warnings.map((warning, index) => (
+                    <li key={index} className="text-sm text-red-400">{warning}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+              </div>
+
+          {/* VM Configuration */}
           <div className="bg-slate-800/50 backdrop-blur-sm p-6 rounded-xl">
-            <h3 className="text-lg font-semibold mb-4">Resource Utilization</h3>
-            <div className="space-y-6">
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>CPU Utilization</span>
-                  <span>{utilization.cpu.toFixed(1)}%</span>
-                </div>
-                <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-blue-500 rounded-full"
-                    style={{ width: `${utilization.cpu}%` }}
-                  ></div>
-                </div>
-                {utilization.cpu > vsanConfig.maxUtilization && (
-                  <div className="mt-2 text-xs text-red-400 flex items-center gap-1">
-                    <AlertTriangle size={12} />
-                    <span>Exceeds {vsanConfig.maxUtilization}% threshold</span>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>Storage Utilization</span>
-                  <span>{utilization.storage.toFixed(1)}%</span>
-                </div>
-                <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-green-500 rounded-full"
-                    style={{ width: `${utilization.storage}%` }}
-                  ></div>
-                </div>
-                {utilization.storage > vsanConfig.maxUtilization && (
-                  <div className="mt-2 text-xs text-red-400 flex items-center gap-1">
-                    <AlertTriangle size={12} />
-                    <span>Exceeds {vsanConfig.maxUtilization}% threshold</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-slate-800/50 backdrop-blur-sm p-6 rounded-xl">
-            <h3 className="text-lg font-semibold mb-4">Configuration Details</h3>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-slate-700/50 p-3 rounded-lg">
-                  <div className="text-sm text-slate-400">Protection Level</div>
-                  <div className="font-medium mt-1">
-                    FTT={vsanConfig.ftt} 
-                    ({vsanConfig.ftt === 1 ? 'RAID-1' : 
-                      vsanConfig.ftt === 2 ? 'RAID-6' : 
-                      'Triple Mirror'})
-                  </div>
-                </div>
-                <div className="bg-slate-700/50 p-3 rounded-lg">
-                  <div className="text-sm text-slate-400">Cluster Type</div>
-                  <div className="font-medium mt-1">
-                    {vsanConfig.stretchedCluster ? 'Stretched' : 'Standard'}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-slate-700/50 p-3 rounded-lg">
-                <div className="text-sm text-slate-400">Features</div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {vsanConfig.deduplication && (
-                    <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded text-xs">
-                      Deduplication
-                    </span>
-                  )}
-                  {vsanConfig.compression && (
-                    <span className="px-2 py-1 bg-green-500/20 text-green-300 rounded text-xs">
-                      Compression
-                    </span>
-                  )}
-                  {vsanConfig.encryption && (
-                    <span className="px-2 py-1 bg-purple-500/20 text-purple-300 rounded text-xs">
-                      Encryption
-                    </span>
-                  )}
-                  {vsanConfig.witnessNode && (
-                    <span className="px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded text-xs">
-                      Witness Node
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {nodes.length > 0 && (
-                <div className="bg-slate-700/50 p-3 rounded-lg">
-                  <div className="text-sm text-slate-400">Node Configuration</div>
-                  <div className="mt-2 space-y-2">
-                    {nodes.map((node, index) => (
-                      <div key={node.id} className="flex justify-between items-center text-sm">
-                        <span>{node.name}</span>
-                        <span>
-                          {node.diskGroups} × {node.disksPerGroup} disks
-                        </span>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Virtual Machines</h2>
+                          <button
+                onClick={addVM}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium"
+                          >
+                Add VM
+                          </button>
                       </div>
-                    ))}
-                  </div>
+
+            <div className="space-y-2">
+              {vms.map((vm, index) => (
+                <div key={index} className="bg-slate-700/30 p-3 rounded-lg">
+                  <div className="flex items-center gap-4">
+                          <input
+                            type="text"
+                            value={vm.name}
+                            onChange={(e) => updateVM(index, 'name', e.target.value)}
+                      className="w-32 bg-slate-700/50 border border-slate-600 rounded px-2 py-1 text-sm"
+                      placeholder="VM Name"
+                          />
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center">
+                        <Cpu className="w-4 h-4 text-slate-400 mr-1" />
+                          <input
+                            type="number"
+                            value={vm.vCPUs}
+                            onChange={(e) => updateVM(index, 'vCPUs', e.target.value)}
+                          className="w-16 bg-slate-700/50 border border-slate-600 rounded px-2 py-1 text-sm"
+                            min="1"
+                          placeholder="vCPUs"
+                          />
+                        </div>
+                      <div className="flex items-center">
+                        <Memory className="w-4 h-4 text-slate-400 mr-1" />
+                          <input
+                            type="number"
+                            value={vm.memory}
+                            onChange={(e) => updateVM(index, 'memory', e.target.value)}
+                          className="w-16 bg-slate-700/50 border border-slate-600 rounded px-2 py-1 text-sm"
+                            min="1"
+                          placeholder="GB"
+                          />
+                        </div>
+                      <div className="flex items-center">
+                        <HardDrive className="w-4 h-4 text-slate-400 mr-1" />
+                          <input
+                            type="number"
+                            value={vm.storage}
+                            onChange={(e) => updateVM(index, 'storage', e.target.value)}
+                          className="w-16 bg-slate-700/50 border border-slate-600 rounded px-2 py-1 text-sm"
+                            min="1"
+                          placeholder="GB"
+                          />
+                      </div>
+                      <div className="flex items-center">
+                        <Server className="w-4 h-4 text-slate-400 mr-1" />
+                        <input
+                          type="number"
+                          value={vm.count}
+                          onChange={(e) => updateVM(index, 'count', e.target.value)}
+                          className="w-16 bg-slate-700/50 border border-slate-600 rounded px-2 py-1 text-sm"
+                          min="1"
+                          placeholder="Count"
+                        />
+                      </div>
+                    </div>
+                  <button
+                      onClick={() => removeVM(index)}
+                      className="ml-auto text-red-400 hover:text-red-300 text-sm"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                  <div className="mt-2 text-xs text-slate-400 flex justify-between">
+                    <span>Total vCPUs: {vm.vCPUs * vm.count}</span>
+                    <span>Total Memory: {vm.memory * vm.count} GB</span>
+                    <span>Total Storage: {formatStorage(vm.storage * vm.count)}</span>
+                      </div>
+                    </div>
+                  ))}
+            </div>
+            
+            {/* Total Resources */}
+            <div className="mt-6 pt-6 border-t border-slate-700">
+              <h3 className="text-lg font-semibold mb-4">Total Resources</h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-slate-700/30 p-4 rounded-lg">
+                  <div className="text-sm font-medium text-slate-400">Total vCPUs</div>
+              <div className="text-2xl font-bold">{totalResources.vCPUs}</div>
                 </div>
-              )}
+                <div className="bg-slate-700/30 p-4 rounded-lg">
+                  <div className="text-sm font-medium text-slate-400">Total Memory</div>
+                  <div className="text-2xl font-bold">{totalResources.memory} GB</div>
+                </div>
+                <div className="bg-slate-700/30 p-4 rounded-lg">
+                  <div className="text-sm font-medium text-slate-400">Total Storage</div>
+                  <div className="text-2xl font-bold">{formatStorage(totalResources.storage)}</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
