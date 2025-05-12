@@ -29,6 +29,7 @@ interface VmGroup {
   iopsPerVm: number;
   ramPerVmGB: number;
   cpuPerVm: number;
+  coreRatio: number;
 }
 
 interface CpuConfig {
@@ -76,11 +77,150 @@ interface NodeResult {
   }[];
 }
 
+interface SystemOverhead {
+  cvm: {
+    enabled: boolean;
+    vcpus: number;
+    ramGB: number;
+    storageGB: number;
+    iopsPercentage: number;
+  };
+  prism: {
+    enabled: boolean;
+    vcpus: number;
+    ramGB: number;
+    storageGB: number;
+    iops: number;
+  };
+}
+
+// Adicionar novo tipo para resultados de falha
+interface FailureScenarioResult extends NodeResult {
+  isFailureScenario: boolean;
+  originalNodes: number;
+  impact: {
+    cpuImpact: number;
+    memoryImpact: number;
+    storageImpact: number;
+    iopsImpact: number;
+  };
+}
+
 // ========== DADOS DE HARDWARE ==========
 const CPU_MODELS = [
-  { model: 'Xeon Silver 4516Y+', cores: 24, tdp: 185, clock: 2.2 },
-  { model: 'Xeon Gold 6526Y', cores: 16, tdp: 195, clock: 2.8 },
+  // 8 Cores
+  { model: 'Xeon Bronze 3408U', cores: 8, tdp: 125, clock: 1.8 },
+  { model: 'Xeon Bronze 3508U', cores: 8, tdp: 125, clock: 2.1 },
+  { model: 'Xeon Gold 5415+', cores: 8, tdp: 165, clock: 3.2 },
   { model: 'Xeon Gold 5515+', cores: 8, tdp: 165, clock: 3.2 },
+  { model: 'Xeon Gold 6434', cores: 8, tdp: 195, clock: 3.7 },
+  { model: 'Xeon Gold 6534', cores: 8, tdp: 195, clock: 3.9 },
+  { model: 'Xeon Silver 4509Y', cores: 8, tdp: 125, clock: 2.6 },
+
+  // 10 Cores
+  { model: 'Xeon Silver 4410T', cores: 10, tdp: 150, clock: 2.7 },
+
+  // 12 Cores
+  { model: 'Xeon Silver 4410Y', cores: 12, tdp: 150, clock: 2.0 },
+  { model: 'Xeon Silver 4510', cores: 12, tdp: 150, clock: 2.4 },
+  { model: 'Xeon Silver 4510T', cores: 12, tdp: 115, clock: 2.0 },
+
+  // 16 Cores
+  { model: 'Xeon Gold 5416S', cores: 16, tdp: 150, clock: 2.0 },
+  { model: 'Xeon Gold 5426Y', cores: 16, tdp: 185, clock: 2.5 },
+  { model: 'Xeon Gold 5516Y+', cores: 16, tdp: 185, clock: 2.2 },
+  { model: 'Xeon Gold 6526Y', cores: 16, tdp: 195, clock: 2.8 },
+  { model: 'Xeon Gold 6544Y', cores: 16, tdp: 270, clock: 3.6 },
+  { model: 'Xeon Gold 6426Y', cores: 16, tdp: 185, clock: 2.5 },
+  { model: 'Xeon Gold 6444Y', cores: 16, tdp: 270, clock: 3.6 },
+  { model: 'Xeon Platinum 8444H', cores: 16, tdp: 270, clock: 2.9 },
+  { model: 'Xeon Silver 4514Y', cores: 16, tdp: 150, clock: 2.0 },
+
+  // 18 Cores
+  { model: 'Xeon Gold 6416H', cores: 18, tdp: 165, clock: 2.2 },
+
+  // 20 Cores
+  { model: 'Xeon Silver 4416+', cores: 20, tdp: 165, clock: 2.0 },
+  { model: 'Xeon 5423N', cores: 20, tdp: 145, clock: 2.1 },
+  { model: 'Xeon 5433N', cores: 20, tdp: 160, clock: 2.3 },
+
+  // 24 Cores
+  { model: 'Xeon Gold 5411N', cores: 24, tdp: 165, clock: 1.9 },
+  { model: 'Xeon Gold 5412U', cores: 24, tdp: 185, clock: 2.1 },
+  { model: 'Xeon Gold 5418N', cores: 24, tdp: 165, clock: 1.8 },
+  { model: 'Xeon Gold 5418Y', cores: 24, tdp: 185, clock: 2.0 },
+  { model: 'Xeon Gold 6418H', cores: 24, tdp: 185, clock: 2.1 },
+  { model: 'Xeon Gold 6442Y', cores: 24, tdp: 225, clock: 2.6 },
+  { model: 'Xeon Gold 6542Y', cores: 24, tdp: 250, clock: 2.9 },
+  { model: 'Xeon Silver 4516Y+', cores: 24, tdp: 185, clock: 2.2 },
+  { model: 'Xeon 6403N', cores: 24, tdp: 185, clock: 1.9 },
+
+  // 28 Cores
+  { model: 'Xeon Gold 5420+', cores: 28, tdp: 205, clock: 2.0 },
+  { model: 'Xeon Gold 5520+', cores: 28, tdp: 205, clock: 2.2 },
+  { model: 'Xeon Gold 5512U', cores: 28, tdp: 185, clock: 2.1 },
+  { model: 'Xeon 6423N', cores: 28, tdp: 195, clock: 2.0 },
+  { model: 'Xeon Platinum 8450H', cores: 28, tdp: 250, clock: 2.0 },
+
+  // 32 Cores
+  { model: 'Xeon Gold 6414U', cores: 32, tdp: 250, clock: 2.0 },
+  { model: 'Xeon Gold 6438Y+', cores: 32, tdp: 205, clock: 2.0 },
+  { model: 'Xeon Gold 6438M', cores: 32, tdp: 205, clock: 2.2 },
+  { model: 'Xeon Gold 6438N', cores: 32, tdp: 205, clock: 2.0 },
+  { model: 'Xeon Gold 6443N', cores: 32, tdp: 195, clock: 1.6 },
+  { model: 'Xeon Gold 6448H', cores: 32, tdp: 250, clock: 2.4 },
+  { model: 'Xeon Gold 6448Y', cores: 32, tdp: 225, clock: 2.1 },
+  { model: 'Xeon Gold 6454S', cores: 32, tdp: 270, clock: 2.2 },
+  { model: 'Xeon Gold 6458Q', cores: 32, tdp: 350, clock: 3.1 },
+  { model: 'Xeon Gold 6530', cores: 32, tdp: 270, clock: 2.1 },
+  { model: 'Xeon Gold 6430', cores: 32, tdp: 270, clock: 2.1 },
+  { model: 'Xeon Gold 6538N', cores: 32, tdp: 205, clock: 2.1 },
+  { model: 'Xeon Gold 6538Y+', cores: 32, tdp: 225, clock: 2.2 },
+  { model: 'Xeon Gold 6548Y+', cores: 32, tdp: 250, clock: 2.5 },
+  { model: 'Xeon Gold 6548N', cores: 32, tdp: 250, clock: 2.8 },
+  { model: 'Xeon Platinum 8462Y+', cores: 32, tdp: 300, clock: 2.8 },
+  { model: 'Xeon Platinum 8454H', cores: 32, tdp: 270, clock: 2.1 },
+  { model: 'Xeon Platinum 8562Y+', cores: 32, tdp: 300, clock: 2.8 },
+
+  // 36 Cores
+  { model: 'Xeon Gold 6554S', cores: 36, tdp: 270, clock: 2.2 },
+  { model: 'Xeon Platinum 8452Y', cores: 36, tdp: 300, clock: 2.0 },
+
+  // 40 Cores
+  { model: 'Xeon Platinum 8460H', cores: 40, tdp: 330, clock: 2.2 },
+  { model: 'Xeon Platinum 8460Y+', cores: 40, tdp: 300, clock: 2.0 },
+
+  // 44 Cores
+  { model: 'Xeon Platinum 8458P', cores: 44, tdp: 350, clock: 2.7 },
+
+  // 48 Cores
+  { model: 'Xeon Platinum 8461V', cores: 48, tdp: 300, clock: 2.2 },
+  { model: 'Xeon Platinum 8468', cores: 48, tdp: 350, clock: 2.1 },
+  { model: 'Xeon Platinum 8468V', cores: 48, tdp: 330, clock: 2.4 },
+  { model: 'Xeon Platinum 8468H', cores: 48, tdp: 330, clock: 2.1 },
+  { model: 'Xeon Platinum 8558', cores: 48, tdp: 330, clock: 2.1 },
+  { model: 'Xeon Platinum 8558P', cores: 48, tdp: 350, clock: 2.7 },
+  { model: 'Xeon Platinum 8558U', cores: 48, tdp: 300, clock: 2.0 },
+  { model: 'Xeon Platinum 8568Y+', cores: 48, tdp: 350, clock: 2.3 },
+
+  // 52 Cores
+  { model: 'Xeon Platinum 8470', cores: 52, tdp: 350, clock: 2.0 },
+  { model: 'Xeon Platinum 8470N', cores: 52, tdp: 300, clock: 1.7 },
+  { model: 'Xeon Platinum 8470Q', cores: 52, tdp: 350, clock: 2.1 },
+  { model: 'Xeon Platinum 8571N', cores: 52, tdp: 300, clock: 2.4 },
+
+  // 56 Cores
+  { model: 'Xeon Platinum 8480+', cores: 56, tdp: 350, clock: 2.0 },
+  { model: 'Xeon Platinum 8570', cores: 56, tdp: 350, clock: 2.1 },
+
+  // 60 Cores
+  { model: 'Xeon Platinum 8490H', cores: 60, tdp: 350, clock: 1.9 },
+  { model: 'Xeon Platinum 8581V', cores: 60, tdp: 270, clock: 2.0 },
+  { model: 'Xeon Platinum 8580', cores: 60, tdp: 350, clock: 2.0 },
+
+  // 64 Cores
+  { model: 'Xeon Platinum 8592+', cores: 64, tdp: 350, clock: 1.9 },
+  { model: 'Xeon Platinum 8592V', cores: 64, tdp: 330, clock: 2.0 },
   { model: 'Xeon Platinum 8593Q', cores: 64, tdp: 385, clock: 2.2 }
 ].map(cpu => ({ ...cpu, sockets: 2 })); // Padrão para 2 sockets
 
@@ -105,6 +245,25 @@ const FORM_FACTOR_DISK_LIMITS = {
   }
 };
 
+// Cole aqui sua lista real de processadores SAP HANA:
+type SapCpuModel = { model: string; cores: number; tdp: number; clock: number; saps: number; sockets: number; price: number };
+// Exemplo:
+// const SAP_CPU_MODELS: SapCpuModel[] = [
+//   { model: 'Xeon Gold 6338', cores: 32, tdp: 205, clock: 2.0, saps: 95000, sockets: 2, price: 40000 },
+//   ...
+// ];
+const SAP_CPU_MODELS: SapCpuModel[] = [];
+
+// Função exemplo para selecionar o processador mais econômico que atenda ao SAPS e memória:
+function selectProcessor(requiredSaps: number, requiredMemory: number) {
+  // Filtra os processadores que atendem ao SAPS total
+  const candidates = SAP_CPU_MODELS.filter(cpu => (cpu.saps * cpu.sockets) >= requiredSaps);
+  // Ordena pelo menor preço
+  candidates.sort((a, b) => a.price - b.price);
+  // Retorna o mais barato que atende
+  return candidates.length > 0 ? candidates[0] : null;
+}
+
 // ========== COMPONENTES ==========
 const VmGroupManager: React.FC<{
   vmGroups: VmGroup[];
@@ -115,106 +274,91 @@ const VmGroupManager: React.FC<{
   return (
     <div className="bg-slate-700/50 p-6 rounded-lg mb-6">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold text-white flex items-center">
-          <Box className="mr-2" /> Grupos de VMs
-        </h2>
+        <h2 className="text-xl font-semibold text-white">Virtual Machines</h2>
         <button
           onClick={onAdd}
-          className="flex items-center bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 px-3 py-1 rounded"
+          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium"
         >
-          <Plus size={16} className="mr-1" /> Adicionar Grupo
+          Add VM
         </button>
       </div>
 
       <div className="space-y-4">
         {vmGroups.map((group) => (
-          <div key={group.id} className="border border-slate-600 rounded-lg p-4">
-            <div className="flex justify-between items-center mb-3">
-              <input
-                type="text"
-                value={group.name}
-                onChange={(e) => onUpdate(group.id, { ...group, name: e.target.value })}
-                placeholder="Nome do Grupo"
-                className="font-medium bg-transparent border-b-2 border-transparent focus:border-blue-500 focus:outline-none text-white"
-              />
-              {vmGroups.length > 1 && (
-                <button
-                  onClick={() => onRemove(group.id)}
-                  className="text-red-400 hover:text-red-300 p-1"
-                >
-                  <Trash2 size={18} />
-                </button>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div key={group.id} className="bg-slate-700/30 p-4 rounded-lg">
+            <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm text-slate-300 mb-1">Quantidade</label>
-                <div className="flex border border-slate-600 rounded">
-                  <button 
-                    onClick={() => onUpdate(group.id, { ...group, count: Math.max(1, group.count - 1) })}
-                    className="px-2 bg-slate-700 text-white"
-                  >
-                    <Minus size={16} />
-                  </button>
-                  <input
-                    type="number"
-                    value={group.count}
-                    onChange={(e) => onUpdate(group.id, { ...group, count: parseInt(e.target.value) || 1 })}
-                    className="w-full p-2 text-center border-0 bg-slate-700 text-white"
-                    min="1"
-                  />
-                  <button 
-                    onClick={() => onUpdate(group.id, { ...group, count: group.count + 1 })}
-                    className="px-2 bg-slate-700 text-white"
-                  >
-                    <Plus size={16} />
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm text-slate-300 mb-1">Tamanho (GB)</label>
+                <label className="block text-sm text-slate-300 mb-1">Nome</label>
                 <input
-                  type="number"
-                  value={group.avgSizeGB}
-                  onChange={(e) => onUpdate(group.id, { ...group, avgSizeGB: parseInt(e.target.value) || 0 })}
-                  className="w-full p-2 border border-slate-600 rounded bg-slate-700 text-white"
-                  min="1"
+                  type="text"
+                  value={group.name}
+                  onChange={(e) => onUpdate(group.id, { ...group, name: e.target.value })}
+                  className="w-full bg-slate-700/50 border border-slate-600 rounded px-3 py-2 text-sm"
+                  placeholder="Nome da VM"
                 />
               </div>
-
               <div>
-                <label className="block text-sm text-slate-300 mb-1">IOPS/VM</label>
-                <input
-                  type="number"
-                  value={group.iopsPerVm}
-                  onChange={(e) => onUpdate(group.id, { ...group, iopsPerVm: parseInt(e.target.value) || 0 })}
-                  className="w-full p-2 border border-slate-600 rounded bg-slate-700 text-white"
-                  min="1"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-slate-300 mb-1">vCPUs/VM</label>
+                <label className="block text-sm text-slate-300 mb-1">vCPU</label>
                 <input
                   type="number"
                   value={group.cpuPerVm}
                   onChange={(e) => onUpdate(group.id, { ...group, cpuPerVm: parseInt(e.target.value) || 0 })}
-                  className="w-full p-2 border border-slate-600 rounded bg-slate-700 text-white"
+                  className="w-full bg-slate-700/50 border border-slate-600 rounded px-3 py-2 text-sm"
+                  placeholder="vCPU"
                   min="1"
                 />
               </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-sm text-slate-300 mb-1">RAM/VM (GB)</label>
+              <div>
+                <label className="block text-sm text-slate-300 mb-1">RAM (GB)</label>
                 <input
                   type="number"
                   value={group.ramPerVmGB}
                   onChange={(e) => onUpdate(group.id, { ...group, ramPerVmGB: parseInt(e.target.value) || 0 })}
-                  className="w-full p-2 border border-slate-600 rounded bg-slate-700 text-white"
+                  className="w-full bg-slate-700/50 border border-slate-600 rounded px-3 py-2 text-sm"
+                  placeholder="RAM"
                   min="1"
                 />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-300 mb-1">HD (GB)</label>
+                <input
+                  type="number"
+                  value={group.avgSizeGB}
+                  onChange={(e) => onUpdate(group.id, { ...group, avgSizeGB: parseInt(e.target.value) || 0 })}
+                  className="w-full bg-slate-700/50 border border-slate-600 rounded px-3 py-2 text-sm"
+                  placeholder="HD"
+                  min="1"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-300 mb-1">Qtd</label>
+                <input
+                  type="number"
+                  value={group.count}
+                  onChange={(e) => onUpdate(group.id, { ...group, count: parseInt(e.target.value) || 1 })}
+                  className="w-full bg-slate-700/50 border border-slate-600 rounded px-3 py-2 text-sm"
+                  placeholder="Qty"
+                  min="1"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-300 mb-1">Core Ratio</label>
+                <input
+                  type="number"
+                  value={group.coreRatio}
+                  onChange={(e) => onUpdate(group.id, { ...group, coreRatio: parseInt(e.target.value) || 1 })}
+                  className="w-full bg-slate-700/50 border border-slate-600 rounded px-3 py-2 text-sm"
+                  placeholder="Ratio"
+                  min="1"
+                />
+              </div>
+              <div className="col-span-3 flex justify-end">
+                <button
+                  onClick={() => onRemove(group.id)}
+                  className="text-red-400 hover:text-red-300 text-sm"
+                >
+                  Remove
+                </button>
               </div>
             </div>
           </div>
@@ -227,14 +371,17 @@ const VmGroupManager: React.FC<{
 const ServerConfigurator: React.FC<{
   config: NodeConfig;
   onChange: (config: NodeConfig) => void;
-}> = ({ config, onChange }) => {
+  systemOverhead: SystemOverhead;
+  onSystemOverheadChange: (overhead: SystemOverhead) => void;
+}> = ({ config, onChange, systemOverhead, onSystemOverheadChange }) => {
   const [selectedFormFactor, setSelectedFormFactor] = useState<FormFactor>(config.formFactor);
   const [selectedCpu, setSelectedCpu] = useState<CpuConfig>(config.cpus[0]);
   const [sockets, setSockets] = useState<number>(config.cpus.length);
   const [diskType, setDiskType] = useState<DiskType>(config.disks[0].type);
   const [diskSize, setDiskSize] = useState<DiskSize>(config.disks[0].size);
   const [diskCount, setDiskCount] = useState<number>(config.disks[0].count);
-  const [memory, setMemory] = useState<number>(config.memory.sizeGB);
+  const [memorySize, setMemorySize] = useState<number>(config.memory.sizeGB);
+  const [memorySticks, setMemorySticks] = useState<number>(Math.ceil(config.memory.sizeGB / 32));
 
   const updateDiskConfig = () => {
     const newDisks: DiskConfig[] = [];
@@ -252,13 +399,13 @@ const ServerConfigurator: React.FC<{
       formFactor: selectedFormFactor,
       cpus: Array(sockets).fill(selectedCpu),
       disks: newDisks,
-      memory: { sizeGB: memory }
+      memory: { sizeGB: memorySize * memorySticks }
     });
   };
 
   useEffect(() => {
     updateDiskConfig();
-  }, [selectedFormFactor, selectedCpu, sockets, diskType, diskSize, diskCount, memory]);
+  }, [selectedFormFactor, selectedCpu, sockets, diskType, diskSize, diskCount, memorySize, memorySticks]);
 
   const getMaxDisks = () => {
     if (diskType === 'NLSAS') {
@@ -269,9 +416,50 @@ const ServerConfigurator: React.FC<{
 
   return (
     <div className="bg-slate-700/50 p-6 rounded-lg mb-6">
-      <h2 className="text-xl font-semibold text-white mb-4 flex items-center">
-        <Server className="mr-2" /> Configuração do Servidor
-      </h2>
+      <h2 className="text-xl font-semibold text-white mb-4">Server Configuration</h2>
+
+      {/* System Overhead Toggles */}
+      <div className="mb-6 p-4 bg-slate-700/30 rounded-lg">
+        <h3 className="text-lg font-medium text-white mb-3">System Overhead</h3>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm font-medium text-slate-300">CVM</label>
+              <p className="text-xs text-slate-400">8 vCPUs, 32GB RAM, 30GB Storage, 10% IOPS</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={systemOverhead.cvm.enabled}
+                onChange={(e) => onSystemOverheadChange({
+                  ...systemOverhead,
+                  cvm: { ...systemOverhead.cvm, enabled: e.target.checked }
+                })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm font-medium text-slate-300">Prism Central</label>
+              <p className="text-xs text-slate-400">8 vCPUs, 32GB RAM, 500GB Storage, 1000 IOPS</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={systemOverhead.prism.enabled}
+                onChange={(e) => onSystemOverheadChange({
+                  ...systemOverhead,
+                  prism: { ...systemOverhead.prism, enabled: e.target.checked }
+                })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Form Factor e CPU */}
@@ -318,17 +506,35 @@ const ServerConfigurator: React.FC<{
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Memória por Nó (GB)</label>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-slate-300 mb-1">Tamanho do Pente (GB)</label>
             <select
-              value={memory}
-              onChange={(e) => setMemory(parseInt(e.target.value))}
+              value={memorySize}
+              onChange={(e) => setMemorySize(parseInt(e.target.value))}
               className="w-full p-2 border border-slate-600 rounded bg-slate-700 text-white"
             >
-              {MEMORY_OPTIONS.map(size => (
-                <option key={size} value={size}>{size} GB</option>
-              ))}
+              <option value="32">32 GB</option>
+              <option value="64">64 GB</option>
+              <option value="128">128 GB</option>
+              <option value="256">256 GB</option>
             </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1">
+              Quantidade de Pentes (Max: 32)
+            </label>
+            <input
+              type="number"
+              value={memorySticks}
+              onChange={(e) => setMemorySticks(Math.min(Math.max(parseInt(e.target.value) || 1, 1), 32))}
+              className="w-full p-2 border border-slate-600 rounded bg-slate-700 text-white"
+              min="1"
+              max="32"
+            />
+            <p className="text-sm text-slate-400 mt-1">
+              Total: {memorySize * memorySticks} GB
+            </p>
           </div>
         </div>
 
@@ -447,14 +653,14 @@ const ResultsPanel: React.FC<{ result: NodeResult }> = ({ result }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-slate-700 p-4 rounded-lg">
           <div className="flex items-center text-white mb-2">
-            <Gauge className="mr-2" />
-            <h3 className="font-medium">Performance</h3>
+            <Network className="mr-2" />
+            <h3 className="font-medium">Requisitos de Rede</h3>
           </div>
           <p className="text-lg font-semibold text-white">
-            {result.totalIOPS.toLocaleString()} IOPS estimados
+            {result.networkRequirements}
           </p>
           <p className="text-sm text-slate-300 mt-1">
-            Largura de banda recomendada: {result.networkRequirements}
+            Recomendado para {result.totalNodes} nós
           </p>
         </div>
 
@@ -476,14 +682,130 @@ const ResultsPanel: React.FC<{ result: NodeResult }> = ({ result }) => {
   );
 };
 
+// Modificar o componente ResourceVisualization para mostrar sempre os dois cenários lado a lado.
+const ResourceVisualization: React.FC<{
+  vmGroups: VmGroup[];
+  nodeConfig: NodeConfig;
+  result: NodeResult;
+  systemOverhead: SystemOverhead;
+}> = ({ vmGroups, nodeConfig, result, systemOverhead }) => {
+  // Calcular vCPUs totais sem multiplicar pelo core ratio
+  const totalVcpus = vmGroups.reduce((sum, group) => 
+    sum + (group.cpuPerVm * group.count), 0);
+  const totalMemory = vmGroups.reduce((sum, group) => 
+    sum + (group.ramPerVmGB * group.count), 0);
+  const totalStorage = vmGroups.reduce((sum, group) => 
+    sum + (group.avgSizeGB * group.count), 0);
+
+  // Calcular overhead do sistema
+  const cvmOverhead = {
+    vcpus: systemOverhead.cvm.enabled ? systemOverhead.cvm.vcpus * result.totalNodes : 0,
+    ramGB: systemOverhead.cvm.enabled ? systemOverhead.cvm.ramGB * result.totalNodes : 0,
+    storageGB: systemOverhead.cvm.enabled ? systemOverhead.cvm.storageGB * result.totalNodes : 0,
+    iops: systemOverhead.cvm.enabled ? result.totalIOPS * (systemOverhead.cvm.iopsPercentage / 100) : 0
+  };
+
+  const prismOverhead = {
+    vcpus: systemOverhead.prism.enabled ? systemOverhead.prism.vcpus : 0,
+    ramGB: systemOverhead.prism.enabled ? systemOverhead.prism.ramGB : 0,
+    storageGB: systemOverhead.prism.enabled ? systemOverhead.prism.storageGB : 0,
+    iops: systemOverhead.prism.enabled ? systemOverhead.prism.iops : 0
+  };
+
+  // Calculate totals with overhead
+  const totalVcpusWithOverhead = totalVcpus + cvmOverhead.vcpus + prismOverhead.vcpus;
+  const totalMemoryWithOverhead = totalMemory + cvmOverhead.ramGB + prismOverhead.ramGB;
+  const totalStorageWithOverhead = totalStorage + cvmOverhead.storageGB + prismOverhead.storageGB;
+
+  // Calculate effective cores considering core ratio
+  const coresPerNode = nodeConfig.cpus[0].cores * nodeConfig.cpus.length;
+  const totalPhysicalCores = result.totalNodes * coresPerNode;
+  const maxCoreRatio = Math.max(...vmGroups.map(g => g.coreRatio));
+  const effectiveCores = totalPhysicalCores * maxCoreRatio;
+
+  // Calculate percentages
+  const cpuPercent = Math.round((totalVcpusWithOverhead / effectiveCores) * 100);
+  const memoryPercent = Math.round((totalMemoryWithOverhead / result.totalRamGB) * 100);
+  const storagePercent = Math.round((totalStorageWithOverhead / (result.storageEffectiveTB * 1024)) * 100);
+
+  const getBarColor = (percent: number) => {
+    if (percent >= 90) return 'bg-red-500';
+    if (percent >= 80) return 'bg-yellow-500';
+    return 'bg-green-500';
+  };
+
+  return (
+    <div className="bg-slate-700/50 p-4 rounded-lg">
+      <h3 className="text-lg font-semibold text-white mb-3">Resource Usage</h3>
+      
+      <div className="space-y-3">
+        <div>
+          <div className="flex justify-between text-sm mb-1">
+            <span>CPU: {totalVcpusWithOverhead} vCPUs / {effectiveCores} cores efetivos</span>
+            <span>{cpuPercent}%</span>
+          </div>
+          <div className="h-2 bg-slate-600 rounded-full overflow-hidden">
+            <div 
+              className={`h-full rounded-full ${getBarColor(cpuPercent)}`}
+              style={{ width: `${cpuPercent}%` }}
+            />
+          </div>
+          {(cvmOverhead.vcpus > 0 || prismOverhead.vcpus > 0) && (
+            <p className="text-xs text-slate-400 mt-1">
+              Including {cvmOverhead.vcpus} vCPUs for CVM and {prismOverhead.vcpus} vCPUs for Prism Central
+            </p>
+          )}
+        </div>
+
+        <div>
+          <div className="flex justify-between text-sm mb-1">
+            <span>Memory: {totalMemoryWithOverhead}GB / {result.totalRamGB}GB</span>
+            <span>{memoryPercent}%</span>
+          </div>
+          <div className="h-2 bg-slate-600 rounded-full overflow-hidden">
+            <div 
+              className={`h-full rounded-full ${getBarColor(memoryPercent)}`}
+              style={{ width: `${memoryPercent}%` }}
+            />
+          </div>
+          {(cvmOverhead.ramGB > 0 || prismOverhead.ramGB > 0) && (
+            <p className="text-xs text-slate-400 mt-1">
+              Including {cvmOverhead.ramGB}GB for CVM and {prismOverhead.ramGB}GB for Prism Central
+            </p>
+          )}
+        </div>
+
+        <div>
+          <div className="flex justify-between text-sm mb-1">
+            <span>Storage: {totalStorageWithOverhead}GB / {result.storageEffectiveTB * 1024}GB</span>
+            <span>{storagePercent}%</span>
+          </div>
+          <div className="h-2 bg-slate-600 rounded-full overflow-hidden">
+            <div 
+              className={`h-full rounded-full ${getBarColor(storagePercent)}`}
+              style={{ width: `${storagePercent}%` }}
+            />
+          </div>
+          {(cvmOverhead.storageGB > 0 || prismOverhead.storageGB > 0) && (
+            <p className="text-xs text-slate-400 mt-1">
+              Including {cvmOverhead.storageGB}GB for CVM and {prismOverhead.storageGB}GB for Prism Central
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ========== LÓGICA DE CÁLCULO ==========
-function calculateNodes(vmGroups: VmGroup[], nodeConfig: NodeConfig): NodeResult {
+function calculateNodes(vmGroups: VmGroup[], nodeConfig: NodeConfig, systemOverhead: SystemOverhead): NodeResult {
   // 1. Agregar requisitos totais
   const total = vmGroups.reduce((acc, group) => {
     acc.vmCount += group.count;
     acc.totalSizeGB += group.count * group.avgSizeGB;
     acc.totalIOPS += group.count * group.iopsPerVm;
     acc.totalRamGB += group.count * group.ramPerVmGB;
+    // Calcular vCPUs totais sem multiplicar pelo core ratio
     acc.totalCpu += group.count * group.cpuPerVm;
     return acc;
   }, {
@@ -504,7 +826,13 @@ function calculateNodes(vmGroups: VmGroup[], nodeConfig: NodeConfig): NodeResult
 
   const nodesForStorage = Math.ceil(storageRequiredTB / storagePerNodeTB);
   const nodesForRam = Math.ceil(total.totalRamGB / nodeConfig.memory.sizeGB);
-  const nodesForCpu = Math.ceil(total.totalCpu / (nodeConfig.cpus[0].cores * nodeConfig.cpus.length));
+  
+  // Calcular cores físicos por nó
+  const coresPerNode = nodeConfig.cpus[0].cores * nodeConfig.cpus.length;
+  
+  // Aplicar core ratio apenas no cálculo de CPU
+  const maxCoreRatio = Math.max(...vmGroups.map(g => g.coreRatio));
+  const nodesForCpu = Math.ceil((total.totalCpu / maxCoreRatio) / coresPerNode);
 
   // 4. Determinar número de nós
   const minNodes = Math.max(nodesForStorage, nodesForRam, nodesForCpu);
@@ -523,11 +851,46 @@ function calculateNodes(vmGroups: VmGroup[], nodeConfig: NodeConfig): NodeResult
     return sum + (iopsPerDisk * disk.count);
   }, 0);
 
-  if (total.totalIOPS > diskIOPS * finalNodes * 0.7) {
-    warnings.push('A configuração pode não atingir os IOPS necessários');
+  const totalIOPS = diskIOPS * finalNodes;
+
+  // 7. Calcular overhead do sistema
+  const cvmOverhead = {
+    vcpus: systemOverhead.cvm.enabled ? systemOverhead.cvm.vcpus * finalNodes : 0,
+    ramGB: systemOverhead.cvm.enabled ? systemOverhead.cvm.ramGB * finalNodes : 0,
+    storageGB: systemOverhead.cvm.enabled ? systemOverhead.cvm.storageGB * finalNodes : 0,
+    iops: systemOverhead.cvm.enabled ? totalIOPS * (systemOverhead.cvm.iopsPercentage / 100) : 0
+  };
+
+  const prismOverhead = {
+    vcpus: systemOverhead.prism.enabled ? systemOverhead.prism.vcpus : 0,
+    ramGB: systemOverhead.prism.enabled ? systemOverhead.prism.ramGB : 0,
+    storageGB: systemOverhead.prism.enabled ? systemOverhead.prism.storageGB : 0,
+    iops: systemOverhead.prism.enabled ? systemOverhead.prism.iops : 0
+  };
+
+  // 8. Verificar se há recursos suficientes para o overhead
+  const totalVcpusWithOverhead = total.totalCpu + cvmOverhead.vcpus + prismOverhead.vcpus;
+  const totalRamWithOverhead = total.totalRamGB + cvmOverhead.ramGB + prismOverhead.ramGB;
+  const totalStorageWithOverhead = total.totalSizeGB + cvmOverhead.storageGB + prismOverhead.storageGB;
+  const totalIopsWithOverhead = totalIOPS + cvmOverhead.iops + prismOverhead.iops;
+
+  if (totalVcpusWithOverhead > finalNodes * coresPerNode * maxCoreRatio) {
+    warnings.push('O overhead do sistema pode impactar o desempenho das VMs');
   }
 
-  // 7. Descrição da configuração
+  if (totalRamWithOverhead > finalNodes * nodeConfig.memory.sizeGB) {
+    warnings.push('O overhead do sistema pode impactar o desempenho das VMs');
+  }
+
+  if (totalStorageWithOverhead > finalNodes * storagePerNodeTB * 1024) {
+    warnings.push('O overhead do sistema pode impactar o desempenho das VMs');
+  }
+
+  if (totalIopsWithOverhead > totalIOPS * 0.7) {
+    warnings.push('O overhead do sistema pode impactar o desempenho das VMs');
+  }
+
+  // 9. Descrição da configuração
   const nodeDetails = [{
     formFactor: nodeConfig.formFactor,
     cpuConfig: `${nodeConfig.cpus.length}x ${nodeConfig.cpus[0].model}`,
@@ -538,12 +901,12 @@ function calculateNodes(vmGroups: VmGroup[], nodeConfig: NodeConfig): NodeResult
 
   return {
     totalNodes: finalNodes,
-    totalCores: finalNodes * nodeConfig.cpus[0].cores * nodeConfig.cpus.length,
+    totalCores: finalNodes * coresPerNode,
     totalRamGB: finalNodes * nodeConfig.memory.sizeGB,
     storageRawTB: finalNodes * storagePerNodeTB,
     storageEffectiveTB: (finalNodes * storagePerNodeTB) / protectionFactor,
-    totalIOPS: diskIOPS * finalNodes,
-    networkRequirements: calculateNetwork(finalNodes, total.totalIOPS),
+    totalIOPS: totalIOPS,
+    networkRequirements: calculateNetwork(finalNodes, totalIopsWithOverhead),
     warnings,
     nodeDetails
   };
@@ -559,44 +922,70 @@ function calculateNetwork(nodes: number, iops: number): string {
 const NutanixCalculator: React.FC = () => {
   const [vmGroups, setVmGroups] = useState<VmGroup[]>([
     {
-      id: Date.now().toString(),
-      name: 'Grupo Principal',
-      count: 50,
+      id: '1',
+      name: 'VM Group 1',
+      count: 1,
       avgSizeGB: 100,
       iopsPerVm: 50,
       ramPerVmGB: 4,
-      cpuPerVm: 2
+      cpuPerVm: 2,
+      coreRatio: 4
     }
   ]);
 
   const [nodeConfig, setNodeConfig] = useState<NodeConfig>({
-    formFactor: '1U',
-    cpus: [CPU_MODELS[0]], // Xeon Silver 4516Y+ como padrão
+    formFactor: '2U',
+    cpus: [{
+      model: CPU_MODELS[0].model,
+      cores: CPU_MODELS[0].cores,
+      tdp: CPU_MODELS[0].tdp,
+      clock: CPU_MODELS[0].clock,
+      sockets: CPU_MODELS[0].sockets
+    }],
     disks: [{
       type: 'NVMe',
-      size: 7680, // 7.68TB
-      count: 12,
-      formFactor: '1U'
+      size: 1920,
+      count: 4,
+      formFactor: '2U'
     }],
-    memory: { sizeGB: 256 },
+    memory: { sizeGB: 128 },
     protection: 'RF2'
+  });
+
+  const [systemOverhead, setSystemOverhead] = useState<SystemOverhead>({
+    cvm: {
+      enabled: true,
+      vcpus: 8,
+      ramGB: 32,
+      storageGB: 30,
+      iopsPercentage: 10
+    },
+    prism: {
+      enabled: false,
+      vcpus: 8,
+      ramGB: 32,
+      storageGB: 500,
+      iops: 1000
+    }
   });
 
   const [result, setResult] = useState<NodeResult | null>(null);
 
   useEffect(() => {
-    setResult(calculateNodes(vmGroups, nodeConfig));
-  }, [vmGroups, nodeConfig]);
+    const calculatedResult = calculateNodes(vmGroups, nodeConfig, systemOverhead);
+    setResult(calculatedResult);
+  }, [vmGroups, nodeConfig, systemOverhead]);
 
   const addVmGroup = () => {
     setVmGroups([...vmGroups, {
       id: Date.now().toString(),
-      name: '',
-      count: 10,
-      avgSizeGB: 50,
+      name: `VM Group ${vmGroups.length + 1}`,
+      count: 1,
+      avgSizeGB: 100,
       iopsPerVm: 30,
       ramPerVmGB: 2,
-      cpuPerVm: 1
+      cpuPerVm: 1,
+      coreRatio: 4
     }]);
   };
 
@@ -605,30 +994,50 @@ const NutanixCalculator: React.FC = () => {
   };
 
   const removeVmGroup = (id: string) => {
-    if (vmGroups.length > 1) {
-      setVmGroups(vmGroups.filter(group => group.id !== id));
-    }
+    setVmGroups(vmGroups.filter(group => group.id !== id));
   };
 
   return (
-    <div className="bg-slate-800/50 rounded-lg p-6 shadow-lg">
-      <h2 className="text-2xl font-bold text-white mb-6">
-        Ferramenta Avançada de Sizing Nutanix-Like
-      </h2>
+    <div className="container mx-auto px-4 py-8">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* Área dinâmica - Lista de VMs */}
+        <div className="lg:col-span-2">
+          <div className="overflow-y-auto max-h-screen">
+            <VmGroupManager
+              vmGroups={vmGroups}
+              onAdd={addVmGroup}
+              onUpdate={updateVmGroup}
+              onRemove={removeVmGroup}
+            />
+            <ServerConfigurator
+              config={nodeConfig}
+              onChange={setNodeConfig}
+              systemOverhead={systemOverhead}
+              onSystemOverheadChange={setSystemOverhead}
+            />
+          </div>
+        </div>
 
-      <VmGroupManager
-        vmGroups={vmGroups}
-        onAdd={addVmGroup}
-        onUpdate={updateVmGroup}
-        onRemove={removeVmGroup}
-      />
-
-      <ServerConfigurator
-        config={nodeConfig}
-        onChange={setNodeConfig}
-      />
-
-      {result && <ResultsPanel result={result} />}
+        {/* Área estática - Resultados */}
+        <div className="lg:col-span-3">
+          <div className="sticky top-4">
+            {result && (
+              <>
+                <h2 className="text-xl font-semibold text-white mb-4">Resource Analysis</h2>
+                <ResourceVisualization
+                  vmGroups={vmGroups}
+                  nodeConfig={nodeConfig}
+                  result={result}
+                  systemOverhead={systemOverhead}
+                />
+                <div className="mt-6">
+                  <ResultsPanel result={result} />
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
