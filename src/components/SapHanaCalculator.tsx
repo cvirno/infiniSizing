@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import { Database, Server, Cpu } from 'lucide-react';
+import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
 
 interface Processor {
   model: string;
@@ -7,12 +10,6 @@ interface Processor {
   sockets: number;
   price: number;
   sapsTotal: number;
-}
-
-interface SapHanaConfig {
-  requiredSaps: number;
-  requiredMemory: number;
-  selectedProcessor: Processor | null;
 }
 
 // Lista de processadores para 2 soquetes
@@ -96,107 +93,410 @@ const SAP_PROCESSORS_8: Processor[] = [
 ];
 
 const SapHanaCalculator: React.FC = () => {
-  const [config, setConfig] = useState<SapHanaConfig>({
-    requiredSaps: 0,
-    requiredMemory: 0,
-    selectedProcessor: null
-  });
+  const [saps, setSaps] = useState('');
+  const [memory, setMemory] = useState('');
+  const [utilization, setUtilization] = useState(65);
+  const [processor, setProcessor] = useState<Processor | null>(null);
 
-  const calculateRequiredSaps = (baseSaps: number) => {
-    // Ajuste para 65% de utilização
-    return Math.ceil(baseSaps / 0.65);
+  // QA states
+  const [qaSaps, setQaSaps] = useState('');
+  const [qaMemory, setQaMemory] = useState('');
+  const [qaProcessor, setQaProcessor] = useState<Processor | null>(null);
+
+  // DEV states
+  const [devSaps, setDevSaps] = useState('');
+  const [devMemory, setDevMemory] = useState('');
+  const [devProcessor, setDevProcessor] = useState<Processor | null>(null);
+
+  const handleSapsChange = (value: string) => {
+    setSaps(value);
+    calculateProcessor(value, memory);
   };
 
-  // Função para selecionar o processador mais econômico que atenda ao SAPS e memória
-  function selectProcessor(requiredSaps: number, requiredMemory: number) {
-    let allCandidates;
-    if (requiredMemory > 4096) {
-      // Acima de 4TB, só 4 ou 8 soquetes
-      allCandidates = [
-        ...SAP_PROCESSORS_4,
-        ...SAP_PROCESSORS_8,
-      ];
-    } else {
-      allCandidates = [
-        ...SAP_PROCESSORS_2,
-        ...SAP_PROCESSORS_4,
-        ...SAP_PROCESSORS_8,
-      ];
+  const handleMemoryChange = (value: string) => {
+    setMemory(value);
+    calculateProcessor(saps, value);
+  };
+
+  const handleQaSapsChange = (value: string) => {
+    setQaSaps(value);
+    calculateQaProcessor(value, qaMemory);
+  };
+
+  const handleQaMemoryChange = (value: string) => {
+    setQaMemory(value);
+    calculateQaProcessor(qaSaps, value);
+  };
+
+  const handleDevSapsChange = (value: string) => {
+    setDevSaps(value);
+    calculateDevProcessor(value, devMemory);
+  };
+
+  const handleDevMemoryChange = (value: string) => {
+    setDevMemory(value);
+    calculateDevProcessor(devSaps, value);
+  };
+
+  const handleUtilizationChange = (value: number) => {
+    setUtilization(value);
+    // Limpar campos de Produção
+    setSaps('');
+    setMemory('');
+    setProcessor(null);
+    // Limpar campos de QA
+    setQaSaps('');
+    setQaMemory('');
+    setQaProcessor(null);
+    // Limpar campos de DEV
+    setDevSaps('');
+    setDevMemory('');
+    setDevProcessor(null);
+  };
+
+  const calculateProcessor = (sapsValue: string, memoryValue: string) => {
+    const sapsNum = Number(sapsValue);
+    const memNum = Number(memoryValue);
+
+    if (!sapsNum || !memNum) {
+      setProcessor(null);
+      return;
     }
-    // Filtra os que atendem ao SAPS total
-    const candidates = allCandidates.filter(cpu => cpu.sapsTotal >= requiredSaps);
-    // Ordena pelo menor preço total (unitário * sockets)
-    candidates.sort((a, b) => (a.price * a.sockets) - (b.price * b.sockets));
-    return candidates.length > 0 ? candidates[0] : null;
-  }
 
-  const handleSapsChange = (value: number) => {
-    const adjustedSaps = calculateRequiredSaps(value);
-    const processor = selectProcessor(adjustedSaps, config.requiredMemory);
-    setConfig({
-      requiredSaps: value,
-      requiredMemory: config.requiredMemory,
-      selectedProcessor: processor
-    });
+    // Calcula o SAPS total necessário considerando a utilização
+    const requiredSaps = Math.ceil(sapsNum / (utilization / 100));
+    let candidates: Processor[] = [];
+
+    // Determina a lista de processadores baseado na memória
+    if (memNum > 8192) {
+      candidates = SAP_PROCESSORS_8;
+    } else if (memNum > 4096) {
+      candidates = SAP_PROCESSORS_4;
+    } else {
+      candidates = SAP_PROCESSORS_2;
+    }
+
+    // Filtra processadores que atendem o SAPS total necessário (maior ou igual)
+    const validCandidates = candidates.filter(cpu => cpu.sapsTotal >= requiredSaps);
+    // Ordena por preço (mais barato primeiro)
+    validCandidates.sort((a, b) => (a.price * a.sockets) - (b.price * b.sockets));
+    
+    setProcessor(validCandidates.length > 0 ? validCandidates[0] : null);
   };
 
-  const handleMemoryChange = (value: number) => {
-    setConfig({
-      ...config,
-      requiredMemory: value
-    });
+  const calculateQaProcessor = (sapsValue: string, memoryValue: string) => {
+    const sapsNum = Number(sapsValue);
+    const memNum = Number(memoryValue);
+
+    if (!sapsNum || !memNum) {
+      setQaProcessor(null);
+      return;
+    }
+
+    // Calcula o SAPS total necessário considerando a utilização
+    const requiredSaps = Math.ceil(sapsNum / (utilization / 100));
+    let candidates: Processor[] = [];
+
+    // Determina a lista de processadores baseado na memória
+    if (memNum > 8192) {
+      candidates = SAP_PROCESSORS_8;
+    } else if (memNum > 4096) {
+      candidates = SAP_PROCESSORS_4;
+    } else {
+      candidates = SAP_PROCESSORS_2;
+    }
+
+    // Filtra processadores que atendem o SAPS total necessário (maior ou igual)
+    const validCandidates = candidates.filter(cpu => cpu.sapsTotal >= requiredSaps);
+    // Ordena por preço (mais barato primeiro)
+    validCandidates.sort((a, b) => (a.price * a.sockets) - (b.price * b.sockets));
+    
+    setQaProcessor(validCandidates.length > 0 ? validCandidates[0] : null);
+  };
+
+  const calculateDevProcessor = (sapsValue: string, memoryValue: string) => {
+    const sapsNum = Number(sapsValue);
+    const memNum = Number(memoryValue);
+
+    if (!sapsNum || !memNum) {
+      setDevProcessor(null);
+      return;
+    }
+
+    // Calcula o SAPS total necessário considerando a utilização
+    const requiredSaps = Math.ceil(sapsNum / (utilization / 100));
+    let candidates: Processor[] = [];
+
+    // Determina a lista de processadores baseado na memória
+    if (memNum > 8192) {
+      candidates = SAP_PROCESSORS_8;
+    } else if (memNum > 4096) {
+      candidates = SAP_PROCESSORS_4;
+    } else {
+      candidates = SAP_PROCESSORS_2;
+    }
+
+    // Filtra processadores que atendem o SAPS total necessário (maior ou igual)
+    const validCandidates = candidates.filter(cpu => cpu.sapsTotal >= requiredSaps);
+    // Ordena por preço (mais barato primeiro)
+    validCandidates.sort((a, b) => (a.price * a.sockets) - (b.price * b.sockets));
+    
+    setDevProcessor(validCandidates.length > 0 ? validCandidates[0] : null);
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="bg-slate-700/50 p-6 rounded-lg">
-        <h2 className="text-xl font-semibold text-white mb-4">SAP HANA Sizing</h2>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">
-              SAPS Requeridos
-            </label>
-            <input
-              type="number"
-              value={config.requiredSaps}
-              onChange={(e) => handleSapsChange(Number(e.target.value))}
-              className="w-full p-2 border border-slate-600 rounded bg-slate-700 text-white"
-              placeholder="Digite os SAPS requeridos"
-            />
-          </div>
+    <div className="container mx-auto p-4">
+      <div className="bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 rounded-lg p-6 border border-zinc-700 shadow-xl">
+        <h2 className="text-2xl font-bold mb-6 flex items-center gap-2 text-white">
+          <Database className="w-6 h-6 text-blue-400" />
+          SAP HANA Sizing
+        </h2>
 
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">
-              Memória Requerida (GB)
-            </label>
-            <input
-              type="number"
-              value={config.requiredMemory}
-              onChange={(e) => handleMemoryChange(Number(e.target.value))}
-              className="w-full p-2 border border-slate-600 rounded bg-slate-700 text-white"
-              placeholder="Digite a memória requerida em GB"
-            />
-          </div>
-        </div>
-
-        {config.selectedProcessor && (
-          <div className="mt-6 bg-slate-700 p-4 rounded-lg">
-            <h3 className="text-lg font-medium text-white mb-3">Processador Selecionado</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-slate-300">Modelo: {config.selectedProcessor.model}</p>
-                <p className="text-slate-300">Cores: {config.selectedProcessor.cores}</p>
-                <p className="text-slate-300">SAPS por Socket: {config.selectedProcessor.saps.toLocaleString()}</p>
+            <div className="bg-gradient-to-br from-zinc-800/80 to-zinc-700/80 rounded-lg p-4 border border-zinc-600">
+              <h3 className="text-lg font-semibold mb-4 text-white flex items-center gap-2">
+                <Server className="w-5 h-5 text-green-400" />
+                Produção
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">SAPS</label>
+                  <Input
+                    type="number"
+                    value={saps}
+                    onChange={(e) => handleSapsChange(e.target.value)}
+                    className="bg-zinc-900/50 border-zinc-600 text-white"
+                    placeholder="Digite o SAPS"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">Memória (GB)</label>
+                  <Input
+                    type="number"
+                    value={memory}
+                    onChange={(e) => handleMemoryChange(e.target.value)}
+                    className="bg-zinc-900/50 border-zinc-600 text-white"
+                    placeholder="Digite a Memória"
+                  />
+                </div>
               </div>
-              <div>
-                <p className="text-slate-300">Sockets: {config.selectedProcessor.sockets}</p>
-                <p className="text-slate-300">SAPS Total: {(config.selectedProcessor.saps * config.selectedProcessor.sockets).toLocaleString()}</p>
-                <p className="text-slate-300">Preço Total: R$ {(config.selectedProcessor.price * config.selectedProcessor.sockets).toLocaleString()}</p>
+            </div>
+
+            <div className="bg-gradient-to-br from-zinc-800/80 to-zinc-700/80 rounded-lg p-4 border border-zinc-600 mt-4">
+              <h3 className="text-lg font-semibold mb-4 text-white flex items-center gap-2">
+                <Server className="w-5 h-5 text-yellow-400" />
+                QA
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">SAPS</label>
+                  <Input
+                    type="number"
+                    value={qaSaps}
+                    onChange={(e) => handleQaSapsChange(e.target.value)}
+                    className="bg-zinc-900/50 border-zinc-600 text-white"
+                    placeholder="Digite o SAPS"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">Memória (GB)</label>
+                  <Input
+                    type="number"
+                    value={qaMemory}
+                    onChange={(e) => handleQaMemoryChange(e.target.value)}
+                    className="bg-zinc-900/50 border-zinc-600 text-white"
+                    placeholder="Digite a Memória"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-zinc-800/80 to-zinc-700/80 rounded-lg p-4 border border-zinc-600 mt-4">
+              <h3 className="text-lg font-semibold mb-4 text-white flex items-center gap-2">
+                <Server className="w-5 h-5 text-blue-400" />
+                DEV
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">SAPS</label>
+                  <Input
+                    type="number"
+                    value={devSaps}
+                    onChange={(e) => handleDevSapsChange(e.target.value)}
+                    className="bg-zinc-900/50 border-zinc-600 text-white"
+                    placeholder="Digite o SAPS"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">Memória (GB)</label>
+                  <Input
+                    type="number"
+                    value={devMemory}
+                    onChange={(e) => handleDevMemoryChange(e.target.value)}
+                    className="bg-zinc-900/50 border-zinc-600 text-white"
+                    placeholder="Digite a Memória"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-zinc-800/80 to-zinc-700/80 rounded-lg p-4 border border-zinc-600 mt-4">
+              <h3 className="text-lg font-semibold mb-4 text-white flex items-center gap-2">
+                <Cpu className="w-5 h-5 text-blue-400" />
+                Utilização
+              </h3>
+              <div className="flex items-center gap-4">
+                <Slider
+                  value={[utilization]}
+                  onValueChange={(value) => handleUtilizationChange(value[0])}
+                  min={65}
+                  max={100}
+                  step={1}
+                  className="w-48"
+                />
+                <span className="text-white text-sm font-medium">{utilization}%</span>
               </div>
             </div>
           </div>
-        )}
+
+          <div className="space-y-4">
+            {processor && (
+              <div className="bg-gradient-to-br from-zinc-800/80 to-zinc-700/80 rounded-lg p-4 border border-zinc-600">
+                <h3 className="text-lg font-semibold mb-4 text-white flex items-center gap-2">
+                  <Server className="w-5 h-5 text-green-400" />
+                  Resultado Produção
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <p className="text-zinc-300">
+                      <span className="text-zinc-400">Processador:</span>
+                      <br />
+                      <span className="text-white font-medium">{processor.model}</span>
+                    </p>
+                    <p className="text-zinc-300">
+                      <span className="text-zinc-400">Cores:</span>
+                      <br />
+                      <span className="text-white font-medium">{processor.cores}</span>
+                    </p>
+                    <p className="text-zinc-300">
+                      <span className="text-zinc-400">Soquetes:</span>
+                      <br />
+                      <span className="text-white font-medium">{processor.sockets}</span>
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-zinc-300">
+                      <span className="text-zinc-400">SAPS por Soquete:</span>
+                      <br />
+                      <span className="text-white font-medium">{processor.saps.toLocaleString()}</span>
+                    </p>
+                    <p className="text-zinc-300">
+                      <span className="text-zinc-400">SAPS Total:</span>
+                      <br />
+                      <span className="text-white font-medium">{processor.sapsTotal.toLocaleString()}</span>
+                    </p>
+                    <p className="text-zinc-300">
+                      <span className="text-zinc-400">Preço Total:</span>
+                      <br />
+                      <span className="text-white font-medium">R$ {(processor.price * processor.sockets).toLocaleString()}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {qaProcessor && (
+              <div className="bg-gradient-to-br from-zinc-800/80 to-zinc-700/80 rounded-lg p-4 border border-zinc-600">
+                <h3 className="text-lg font-semibold mb-4 text-white flex items-center gap-2">
+                  <Server className="w-5 h-5 text-yellow-400" />
+                  Resultado QA
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <p className="text-zinc-300">
+                      <span className="text-zinc-400">Processador:</span>
+                      <br />
+                      <span className="text-white font-medium">{qaProcessor.model}</span>
+                    </p>
+                    <p className="text-zinc-300">
+                      <span className="text-zinc-400">Cores:</span>
+                      <br />
+                      <span className="text-white font-medium">{qaProcessor.cores}</span>
+                    </p>
+                    <p className="text-zinc-300">
+                      <span className="text-zinc-400">Soquetes:</span>
+                      <br />
+                      <span className="text-white font-medium">{qaProcessor.sockets}</span>
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-zinc-300">
+                      <span className="text-zinc-400">SAPS por Soquete:</span>
+                      <br />
+                      <span className="text-white font-medium">{qaProcessor.saps.toLocaleString()}</span>
+                    </p>
+                    <p className="text-zinc-300">
+                      <span className="text-zinc-400">SAPS Total:</span>
+                      <br />
+                      <span className="text-white font-medium">{qaProcessor.sapsTotal.toLocaleString()}</span>
+                    </p>
+                    <p className="text-zinc-300">
+                      <span className="text-zinc-400">Preço Total:</span>
+                      <br />
+                      <span className="text-white font-medium">R$ {(qaProcessor.price * qaProcessor.sockets).toLocaleString()}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {devProcessor && (
+              <div className="bg-gradient-to-br from-zinc-800/80 to-zinc-700/80 rounded-lg p-4 border border-zinc-600">
+                <h3 className="text-lg font-semibold mb-4 text-white flex items-center gap-2">
+                  <Server className="w-5 h-5 text-blue-400" />
+                  Resultado DEV
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <p className="text-zinc-300">
+                      <span className="text-zinc-400">Processador:</span>
+                      <br />
+                      <span className="text-white font-medium">{devProcessor.model}</span>
+                    </p>
+                    <p className="text-zinc-300">
+                      <span className="text-zinc-400">Cores:</span>
+                      <br />
+                      <span className="text-white font-medium">{devProcessor.cores}</span>
+                    </p>
+                    <p className="text-zinc-300">
+                      <span className="text-zinc-400">Soquetes:</span>
+                      <br />
+                      <span className="text-white font-medium">{devProcessor.sockets}</span>
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-zinc-300">
+                      <span className="text-zinc-400">SAPS por Soquete:</span>
+                      <br />
+                      <span className="text-white font-medium">{devProcessor.saps.toLocaleString()}</span>
+                    </p>
+                    <p className="text-zinc-300">
+                      <span className="text-zinc-400">SAPS Total:</span>
+                      <br />
+                      <span className="text-white font-medium">{devProcessor.sapsTotal.toLocaleString()}</span>
+                    </p>
+                    <p className="text-zinc-300">
+                      <span className="text-zinc-400">Preço Total:</span>
+                      <br />
+                      <span className="text-white font-medium">R$ {(devProcessor.price * devProcessor.sockets).toLocaleString()}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

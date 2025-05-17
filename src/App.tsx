@@ -6,7 +6,7 @@ import BackupCalculator from './components/BackupCalculator';
 import StorageCalculator from './components/StorageCalculator';
 import VsanCalculator from './components/VsanCalculator';
 import NutanixCalculator from './components/NutanixCalculator';
-import SAPSizing from './components/SAPHSizing';
+import SapHanaCalculator from './components/SapHanaCalculator';
 import Header from './components/Header';
 import Login from './components/Login';
 
@@ -14,20 +14,15 @@ function App() {
   const [activeTab, setActiveTab] = useState<'physical' | 'virtual' | 'backup' | 'storage' | 'vsan' | 'nutanix' | 'sap'>('physical');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  console.log('Authentication state:', isAuthenticated);
-
   const handleLogin = (email: string, password: string) => {
-    console.log('Login attempt with:', email);
     setIsAuthenticated(true);
   };
 
   const handleTabChange = (tab: 'physical' | 'virtual' | 'backup' | 'storage' | 'vsan' | 'nutanix' | 'sap') => {
-    console.log('Changing tab to:', tab);
     setActiveTab(tab);
   };
 
   const handleLogout = () => {
-    console.log('Logging out');
     setIsAuthenticated(false);
   };
 
@@ -126,7 +121,7 @@ function App() {
               {activeTab === 'vsan' && <VsanCalculator />}
               {activeTab === 'nutanix' && <NutanixCalculator />}
               {activeTab === 'backup' && <BackupCalculator />}
-              {activeTab === 'sap' && <SAPSizing />}
+              {activeTab === 'sap' && <SapHanaCalculator />}
             </main>
           </div>
           <footer className="text-center py-1 text-slate-400 text-[10px]">
