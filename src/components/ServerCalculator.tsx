@@ -212,7 +212,7 @@ const ServerCalculator = () => {
   };
 
   const handleDiskSizeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setNewServer({ ...newServer, diskSize: parseInt(e.target.value) });
+    setNewServer({ ...newServer, diskSize: parseFloat(e.target.value) });
   };
 
   const storageData = [
