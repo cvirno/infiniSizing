@@ -203,6 +203,33 @@ const ServerCalculator = () => {
     };
   };
 
+  const calculateTotalThroughput = () => {
+    const ports = calculateTotalPorts();
+    return {
+      total10_25GB: ports.total10_25GB * 25, // Using 25GB as max for 10/25GB ports
+      total100GB: ports.total100GB * 100,
+      total32_64GB: ports.total32_64GB * 64  // Using 64GB as max for 32/64GB ports
+    };
+  };
+
+  const formatThroughput = (gbps: number): string => {
+    if (gbps >= 1000) {
+      return `${(gbps / 1000).toFixed(1)} Tbps`;
+    }
+    return `${gbps} Gbps`;
+  };
+
+  const calculateTotalRackUnits = () => {
+    return servers.reduce((total, server) => total + server.rackUnits, 0);
+  };
+
+  const calculateRackInfo = () => {
+    const totalRackUnits = calculateTotalRackUnits();
+    const racksNeeded = Math.ceil(totalRackUnits / 42);
+    const remainingUnits = totalRackUnits % 42;
+    return { racksNeeded, remainingUnits };
+  };
+
   const exportToPDF = async () => {
     if (!reportRef.current) return;
     const canvas = await html2canvas(reportRef.current, {
@@ -579,19 +606,81 @@ const ServerCalculator = () => {
 
         <div className="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl">
           <h2 className="text-lg font-semibold mb-4">Total Ports and Throughput</h2>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-4 mb-6">
             <div>
               <div className="text-sm text-slate-400 mb-1">Total 10/25GB Ports</div>
               <div className="text-2xl font-bold">{calculateTotalPorts().total10_25GB}</div>
+              <div className="text-sm text-slate-400">Throughput: {formatThroughput(calculateTotalThroughput().total10_25GB)}</div>
             </div>
             <div>
               <div className="text-sm text-slate-400 mb-1">Total 100GB Ports</div>
               <div className="text-2xl font-bold">{calculateTotalPorts().total100GB}</div>
+              <div className="text-sm text-slate-400">Throughput: {formatThroughput(calculateTotalThroughput().total100GB)}</div>
             </div>
             <div>
               <div className="text-sm text-slate-400 mb-1">Total 32/64GB Ports</div>
               <div className="text-2xl font-bold">{calculateTotalPorts().total32_64GB}</div>
+              <div className="text-sm text-slate-400">Throughput: {formatThroughput(calculateTotalThroughput().total32_64GB)}</div>
             </div>
+          </div>
+          <div className="h-[200px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={[
+                  {
+                    name: '10/25GB',
+                    ports: calculateTotalPorts().total10_25GB,
+                    throughput: calculateTotalThroughput().total10_25GB
+                  },
+                  {
+                    name: '100GB',
+                    ports: calculateTotalPorts().total100GB,
+                    throughput: calculateTotalThroughput().total100GB
+                  },
+                  {
+                    name: '32/64GB',
+                    ports: calculateTotalPorts().total32_64GB,
+                    throughput: calculateTotalThroughput().total32_64GB
+                  }
+                ]}
+                margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+              >
+                <XAxis dataKey="name" />
+                <YAxis yAxisId="left" orientation="left" stroke="#8884d8" />
+                <YAxis yAxisId="right" orientation="right" stroke="#82ca9d" />
+                <Tooltip
+                  formatter={(value, name) => [
+                    name === 'ports' ? value : formatThroughput(Number(value)),
+                    name === 'ports' ? 'Ports' : 'Throughput'
+                  ]}
+                  contentStyle={{
+                    backgroundColor: '#1e293b',
+                    border: 'none',
+                    borderRadius: '0.5rem',
+                    padding: '0.5rem'
+                  }}
+                  itemStyle={{ color: '#e2e8f0' }}
+                />
+                <Legend />
+                <Bar yAxisId="left" dataKey="ports" name="Ports" fill="#8884d8" />
+                <Bar yAxisId="right" dataKey="throughput" name="Throughput (Gbps)" fill="#82ca9d" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl">
+          <h2 className="text-lg font-semibold mb-4">Rack Information</h2>
+          <div className="text-sm text-slate-400">
+            {calculateRackInfo().racksNeeded > 1 ? (
+              <div>
+                <p>Total Rack Units: {calculateTotalRackUnits()}U</p>
+                <p>Racks Needed: {calculateRackInfo().racksNeeded}</p>
+                <p>Remaining Units in Last Rack: {calculateRackInfo().remainingUnits}U</p>
+              </div>
+            ) : (
+              <p>Total Rack Units: {calculateTotalRackUnits()}U</p>
+            )}
           </div>
         </div>
 
