@@ -129,7 +129,7 @@ const ServerCalculator = () => {
       const newServers = Array.from({ length: newServer.quantity }, (_, index) => ({
         ...newServer,
         id: `${Date.now()}-${index}`,
-        name: newServer.quantity > 1 ? `${newServer.name}-${index + 1}` : newServer.name
+        name: newServer.name
       }));
       setServers([...servers, ...newServers]);
     }
