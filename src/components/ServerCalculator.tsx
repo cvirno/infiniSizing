@@ -121,40 +121,15 @@ const ServerCalculator = () => {
 
   const addServer = () => {
     if (editingServer) {
-      // Encontra todos os servidores idênticos
-      const serverToUpdate = servers.find(server => server.id === editingServer);
-      if (!serverToUpdate) return;
-
-      const identicalServers = servers.filter(server => 
-        server.name === serverToUpdate.name &&
-        server.processorId === serverToUpdate.processorId &&
-        server.processors === serverToUpdate.processors &&
-        server.rackUnits === serverToUpdate.rackUnits &&
-        server.disks === serverToUpdate.disks &&
-        server.diskSize === serverToUpdate.diskSize &&
-        server.raidType === serverToUpdate.raidType &&
-        server.ports10_25GB === serverToUpdate.ports10_25GB &&
-        server.ports100GB === serverToUpdate.ports100GB &&
-        server.ports32_64GB === serverToUpdate.ports32_64GB
-      );
-
-      // Remove os servidores idênticos
-      const remainingServers = servers.filter(server => !identicalServers.some(s => s.id === server.id));
-
-      // Adiciona a nova quantidade de servidores
-      const newServers = Array.from({ length: newServer.quantity }, (_, index) => ({
-        ...newServer,
-        id: `${Date.now()}-${index}`,
-        name: newServer.name
-      }));
-
-      setServers([...remainingServers, ...newServers]);
+      setServers(servers.map(server => 
+        server.id === editingServer ? { ...newServer, id: server.id } : server
+      ));
       setEditingServer(null);
     } else {
       const newServers = Array.from({ length: newServer.quantity }, (_, index) => ({
         ...newServer,
         id: `${Date.now()}-${index}`,
-        name: newServer.name
+        name: newServer.quantity > 1 ? `${newServer.name}-${index + 1}` : newServer.name
       }));
       setServers([...servers, ...newServers]);
     }
@@ -177,25 +152,7 @@ const ServerCalculator = () => {
   };
 
   const deleteServer = (id: string) => {
-    const serverToDelete = servers.find(server => server.id === id);
-    if (!serverToDelete) return;
-
-    // Encontra todos os servidores idênticos
-    const identicalServers = servers.filter(server => 
-      server.name === serverToDelete.name &&
-      server.processorId === serverToDelete.processorId &&
-      server.processors === serverToDelete.processors &&
-      server.rackUnits === serverToDelete.rackUnits &&
-      server.disks === serverToDelete.disks &&
-      server.diskSize === serverToDelete.diskSize &&
-      server.raidType === serverToDelete.raidType &&
-      server.ports10_25GB === serverToDelete.ports10_25GB &&
-      server.ports100GB === serverToDelete.ports100GB &&
-      server.ports32_64GB === serverToDelete.ports32_64GB
-    );
-
-    // Remove todos os servidores idênticos de uma vez
-    setServers(servers.filter(server => !identicalServers.some(s => s.id === server.id)));
+    setServers(servers.filter(server => server.id !== id));
   };
 
   const clearAllServers = () => {
@@ -206,7 +163,7 @@ const ServerCalculator = () => {
   const editServer = (server: Server) => {
     setNewServer({
       name: server.name,
-      quantity: server.quantity,
+      quantity: 1,
       rackUnits: server.rackUnits,
       processorId: server.processorId,
       processors: server.processors,
@@ -310,77 +267,6 @@ const ServerCalculator = () => {
     { name: 'Usable Storage', value: servers.reduce((acc, server) => acc + calculateTotalStorage(server), 0) }
   ];
 
-  const groupIdenticalServers = (servers: Server[]) => {
-    const groups = servers.reduce((acc, server) => {
-      const key = `${server.name}-${server.processorId}-${server.processors}-${server.rackUnits}-${server.disks}-${server.diskSize}-${server.raidType}-${server.ports10_25GB}-${server.ports100GB}-${server.ports32_64GB}`;
-      if (!acc[key]) {
-        acc[key] = {
-          ...server,
-          quantity: 1,
-          ids: [server.id]
-        };
-      } else {
-        acc[key].quantity += 1;
-        acc[key].ids.push(server.id);
-      }
-      return acc;
-    }, {} as Record<string, Server & { quantity: number; ids: string[] }>);
-
-    return Object.values(groups);
-  };
-
-  const handleEditServer = (server: Server) => {
-    setNewServer({
-      name: server.name,
-      quantity: server.quantity,
-      rackUnits: server.rackUnits,
-      processorId: server.processorId,
-      processors: server.processors,
-      coresPerProcessor: server.coresPerProcessor,
-      disks: server.disks,
-      diskSize: server.diskSize,
-      raidType: server.raidType,
-      ports10_25GB: server.ports10_25GB,
-      ports100GB: server.ports100GB,
-      ports32_64GB: server.ports32_64GB
-    });
-    setEditingServer(server.id);
-  };
-
-  const handleSaveEdit = () => {
-    if (!editingServer) return;
-
-    const serverToUpdate = servers.find(server => server.id === editingServer);
-    if (!serverToUpdate) return;
-
-    // Encontra todos os servidores idênticos
-    const identicalServers = servers.filter(server => 
-      server.name === serverToUpdate.name &&
-      server.processorId === serverToUpdate.processorId &&
-      server.processors === serverToUpdate.processors &&
-      server.rackUnits === serverToUpdate.rackUnits &&
-      server.disks === serverToUpdate.disks &&
-      server.diskSize === serverToUpdate.diskSize &&
-      server.raidType === serverToUpdate.raidType &&
-      server.ports10_25GB === serverToUpdate.ports10_25GB &&
-      server.ports100GB === serverToUpdate.ports100GB &&
-      server.ports32_64GB === serverToUpdate.ports32_64GB
-    );
-
-    // Remove os servidores idênticos
-    const remainingServers = servers.filter(server => !identicalServers.some(s => s.id === server.id));
-
-    // Adiciona a nova quantidade de servidores
-    const newServers = Array.from({ length: newServer.quantity }, (_, index) => ({
-      ...newServer,
-      id: `${Date.now()}-${index}`,
-      name: newServer.name
-    }));
-
-    setServers([...remainingServers, ...newServers]);
-    setEditingServer(null);
-  };
-
   if (!selectedProcessor) {
     return <div>Loading processors...</div>;
   }
@@ -416,6 +302,7 @@ const ServerCalculator = () => {
                     onChange={(e) => setNewServer({ ...newServer, quantity: parseInt(e.target.value) })}
                     className="w-full bg-slate-700 rounded-lg px-4 py-2 text-white"
                     min="1"
+                    disabled={editingServer !== null}
                   />
                 </div>
 
@@ -629,25 +516,217 @@ const ServerCalculator = () => {
               </span>
             </div>
             <div className="space-y-1 max-h-[250px] overflow-y-auto">
-              {groupIdenticalServers(servers).map(group => {
-                const processor = processors.find(p => p.id === group.processorId);
+              {Object.entries(
+                servers.reduce((acc, server) => {
+                  const key = `${server.name}-${server.processorId}-${server.processors}-${server.rackUnits}-${server.disks}-${server.diskSize}-${server.raidType}-${server.ports10_25GB}-${server.ports100GB}-${server.ports32_64GB}`;
+                  if (!acc[key]) {
+                    acc[key] = {
+                      ...server,
+                      quantity: 1
+                    };
+                  } else {
+                    acc[key].quantity += 1;
+                  }
+                  return acc;
+                }, {} as Record<string, Server & { quantity: number }>)
+              ).map(([key, server]) => {
+                const processor = processors.find(p => p.id === server.processorId);
                 return (
                   <div
-                    key={group.ids[0]}
+                    key={key}
                     className="bg-slate-700/50 p-2 rounded-lg flex items-center justify-between"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <Server size={14} className="text-blue-400 shrink-0" />
                       <div className="min-w-0">
                         <h3 className="font-medium text-sm truncate">
-                          {group.name} {group.quantity > 1 ? `(${group.quantity}x)` : ''}
+                          {server.name} {server.quantity > 1 ? `(${server.quantity}x)` : ''}
                         </h3>
+                        <p className="text-xs text-slate-400 truncate">
+                          {server.processors}x {processor?.name.split(' ').slice(-1)[0]}
+                        </p>
                       </div>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <button
+                        onClick={() => editServer(server)}
+                        className="p-1 hover:bg-slate-600 rounded-lg transition-colors"
+                      >
+                        <Edit2 size={12} />
+                      </button>
+                      <button
+                        onClick={() => deleteServer(server.id)}
+                        className="p-1 hover:bg-red-600 rounded-lg transition-colors"
+                      >
+                        <Trash2 size={12} />
+                      </button>
                     </div>
                   </div>
                 );
               })}
             </div>
+          </div>
+
+          <div className="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold">Storage Distribution</h2>
+              <div className="text-sm text-slate-400">
+                Total: {formatStorage(storageData[0].value)}
+              </div>
+            </div>
+            {servers.length > 0 ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie
+                    data={storageData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={40}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    paddingAngle={2}
+                    dataKey="value"
+                  >
+                    {storageData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    formatter={(value) => formatStorage(Number(value))}
+                    contentStyle={{ 
+                      backgroundColor: '#1e293b',
+                      border: 'none',
+                      borderRadius: '0.5rem',
+                      padding: '0.5rem'
+                    }}
+                    itemStyle={{ color: '#e2e8f0' }}
+                  />
+                  <Legend
+                    verticalAlign="bottom"
+                    height={36}
+                    iconType="circle"
+                    formatter={(value) => (
+                      <span style={{ color: '#e2e8f0', fontSize: '0.875rem' }}>{value}</span>
+                    )}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[200px] flex items-center justify-center text-slate-400">
+                No servers added yet
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl">
+          <h2 className="text-lg font-semibold mb-4">Total Ports and Throughput</h2>
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            <div>
+              <div className="text-sm text-slate-400 mb-1">Total 10/25GB Ports</div>
+              <div className="text-2xl font-bold">{calculateTotalPorts().total10_25GB}</div>
+              <div className="text-sm text-slate-400">Throughput: {formatThroughput(calculateTotalThroughput().total10_25GB)}</div>
+            </div>
+            <div>
+              <div className="text-sm text-slate-400 mb-1">Total 100GB Ports</div>
+              <div className="text-2xl font-bold">{calculateTotalPorts().total100GB}</div>
+              <div className="text-sm text-slate-400">Throughput: {formatThroughput(calculateTotalThroughput().total100GB)}</div>
+            </div>
+            <div>
+              <div className="text-sm text-slate-400 mb-1">Total 32/64GB Ports</div>
+              <div className="text-2xl font-bold">{calculateTotalPorts().total32_64GB}</div>
+              <div className="text-sm text-slate-400">Throughput: {formatThroughput(calculateTotalThroughput().total32_64GB)}</div>
+            </div>
+          </div>
+          <div className="h-[200px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={[
+                  {
+                    name: '10/25GB',
+                    ports: calculateTotalPorts().total10_25GB,
+                    throughput: calculateTotalThroughput().total10_25GB
+                  },
+                  {
+                    name: '100GB',
+                    ports: calculateTotalPorts().total100GB,
+                    throughput: calculateTotalThroughput().total100GB
+                  },
+                  {
+                    name: '32/64GB',
+                    ports: calculateTotalPorts().total32_64GB,
+                    throughput: calculateTotalThroughput().total32_64GB
+                  }
+                ]}
+                margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+              >
+                <XAxis dataKey="name" />
+                <YAxis yAxisId="left" orientation="left" stroke="#8884d8" />
+                <YAxis yAxisId="right" orientation="right" stroke="#82ca9d" />
+                <Tooltip
+                  formatter={(value, name) => [
+                    name === 'ports' ? value : formatThroughput(Number(value)),
+                    name === 'ports' ? 'Ports' : 'Throughput'
+                  ]}
+                  contentStyle={{
+                    backgroundColor: '#1e293b',
+                    border: 'none',
+                    borderRadius: '0.5rem',
+                    padding: '0.5rem'
+                  }}
+                  itemStyle={{ color: '#e2e8f0' }}
+                />
+                <Legend />
+                <Bar yAxisId="left" dataKey="ports" name="Ports" fill="#8884d8" />
+                <Bar yAxisId="right" dataKey="throughput" name="Throughput (Gbps)" fill="#82ca9d" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl">
+          <h2 className="text-lg font-semibold mb-4">Rack Information</h2>
+          <div className="text-sm text-slate-400">
+            {calculateRackInfo().racksNeeded > 1 ? (
+              <div>
+                <p>Total Rack Units: {calculateTotalRackUnits()}U</p>
+                <p>Racks Needed: {calculateRackInfo().racksNeeded}</p>
+                <p>Remaining Units in Last Rack: {calculateRackInfo().remainingUnits}U</p>
+              </div>
+            ) : (
+              <p>Total Rack Units: {calculateTotalRackUnits()}U</p>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <div className="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold">Rack Layout</h2>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setRackView('front')}
+                  className={`px-3 py-1 rounded-lg transition-colors ${
+                    rackView === 'front'
+                      ? 'bg-blue-500/20 text-blue-300'
+                      : 'bg-slate-700 text-slate-300'
+                  }`}
+                >
+                  Front View
+                </button>
+                <button
+                  onClick={() => setRackView('rear')}
+                  className={`px-3 py-1 rounded-lg transition-colors ${
+                    rackView === 'rear'
+                      ? 'bg-blue-500/20 text-blue-300'
+                      : 'bg-slate-700 text-slate-300'
+                  }`}
+                >
+                  Rear View
+                </button>
+              </div>
+            </div>
+            <RackVisualization servers={servers} view={rackView} />
           </div>
         </div>
       </div>
