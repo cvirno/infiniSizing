@@ -635,4 +635,19 @@ const ServerCalculator = () => {
                       <Server size={14} className="text-blue-400 shrink-0" />
                       <div className="min-w-0">
                         <h3 className="font-medium text-sm truncate">
-                          {group.name} {group.quantity > 1 ? `
+                          {group.name} {group.quantity > 1 ? `(${group.quantity}x)` : ''}
+                        </h3>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ServerCalculator;
