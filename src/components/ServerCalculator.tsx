@@ -121,9 +121,13 @@ const ServerCalculator = () => {
 
   const addServer = () => {
     if (editingServer) {
-      setServers(servers.map(server => 
-        server.id === editingServer ? { ...newServer, id: server.id } : server
-      ));
+      const filteredServers = servers.filter(server => server.id !== editingServer);
+      const newServers = Array.from({ length: newServer.quantity }, (_, index) => ({
+        ...newServer,
+        id: `${Date.now()}-${index}`,
+        name: newServer.quantity > 1 ? `${newServer.name}-${index + 1}` : newServer.name
+      }));
+      setServers([...filteredServers, ...newServers]);
       setEditingServer(null);
     } else {
       const newServers = Array.from({ length: newServer.quantity }, (_, index) => ({
@@ -163,7 +167,7 @@ const ServerCalculator = () => {
   const editServer = (server: Server) => {
     setNewServer({
       name: server.name,
-      quantity: 1,
+      quantity: server.quantity || 1,
       rackUnits: server.rackUnits,
       processorId: server.processorId,
       processors: server.processors,
@@ -302,7 +306,6 @@ const ServerCalculator = () => {
                     onChange={(e) => setNewServer({ ...newServer, quantity: parseInt(e.target.value) })}
                     className="w-full bg-slate-700 rounded-lg px-4 py-2 text-white"
                     min="1"
-                    disabled={editingServer !== null}
                   />
                 </div>
 
@@ -543,7 +546,7 @@ const ServerCalculator = () => {
                           {server.name} {server.quantity > 1 ? `(${server.quantity}x)` : ''}
                         </h3>
                         <p className="text-xs text-slate-400 truncate">
-                          {server.processors}x {processor?.name.split(' ').slice(-1)[0]}
+                          {server.processors}x {processor?.name.split(' ').slice(-1)[0]} • {server.rackUnits}U • {server.disks}x {formatStorage(server.diskSize)} {server.raidType}
                         </p>
                       </div>
                     </div>
