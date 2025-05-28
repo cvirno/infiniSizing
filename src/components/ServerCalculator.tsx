@@ -582,17 +582,36 @@ const ServerCalculator = () => {
             <h2 className="text-lg font-semibold">Total Ports</h2>
           </div>
           <div className="grid grid-cols-3 gap-4">
-            <div>
+            <div className="bg-slate-700/30 p-4 rounded-lg">
               <div className="text-sm text-slate-400 mb-1">10/25GB Ports</div>
-              <div className="text-2xl font-bold">{calculateTotalPorts().total10_25GB}</div>
+              <div className="text-2xl font-bold mb-2">{calculateTotalPorts().total10_25GB}</div>
+              <div className="text-sm text-slate-400">
+                Throughput: {calculateTotalPorts().total10_25GB * 25} Gbps
+              </div>
             </div>
-            <div>
+            <div className="bg-slate-700/30 p-4 rounded-lg">
               <div className="text-sm text-slate-400 mb-1">100GB Ports</div>
-              <div className="text-2xl font-bold">{calculateTotalPorts().total100GB}</div>
+              <div className="text-2xl font-bold mb-2">{calculateTotalPorts().total100GB}</div>
+              <div className="text-sm text-slate-400">
+                Throughput: {calculateTotalPorts().total100GB * 100} Gbps
+              </div>
             </div>
-            <div>
+            <div className="bg-slate-700/30 p-4 rounded-lg">
               <div className="text-sm text-slate-400 mb-1">32/64GB Ports</div>
-              <div className="text-2xl font-bold">{calculateTotalPorts().total32_64GB}</div>
+              <div className="text-2xl font-bold mb-2">{calculateTotalPorts().total32_64GB}</div>
+              <div className="text-sm text-slate-400">
+                Throughput: {calculateTotalPorts().total32_64GB * 64} Gbps
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
+            <div className="text-sm text-blue-300 mb-1">Total Rack Throughput</div>
+            <div className="text-2xl font-bold text-blue-200">
+              {(
+                calculateTotalPorts().total10_25GB * 25 +
+                calculateTotalPorts().total100GB * 100 +
+                calculateTotalPorts().total32_64GB * 64
+              ).toLocaleString()} Gbps
             </div>
           </div>
         </div>
