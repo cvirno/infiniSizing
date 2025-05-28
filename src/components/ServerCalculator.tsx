@@ -152,7 +152,25 @@ const ServerCalculator = () => {
   };
 
   const deleteServer = (id: string) => {
-    setServers(servers.filter(server => server.id !== id));
+    const serverToDelete = servers.find(server => server.id === id);
+    if (!serverToDelete) return;
+
+    // Encontra todos os servidores idênticos
+    const identicalServers = servers.filter(server => 
+      server.name === serverToDelete.name &&
+      server.processorId === serverToDelete.processorId &&
+      server.processors === serverToDelete.processors &&
+      server.rackUnits === serverToDelete.rackUnits &&
+      server.disks === serverToDelete.disks &&
+      server.diskSize === serverToDelete.diskSize &&
+      server.raidType === serverToDelete.raidType &&
+      server.ports10_25GB === serverToDelete.ports10_25GB &&
+      server.ports100GB === serverToDelete.ports100GB &&
+      server.ports32_64GB === serverToDelete.ports32_64GB
+    );
+
+    // Remove todos os servidores idênticos de uma vez
+    setServers(servers.filter(server => !identicalServers.some(s => s.id === server.id)));
   };
 
   const clearAllServers = () => {
@@ -163,7 +181,7 @@ const ServerCalculator = () => {
   const editServer = (server: Server) => {
     setNewServer({
       name: server.name,
-      quantity: 1,
+      quantity: server.quantity,
       rackUnits: server.rackUnits,
       processorId: server.processorId,
       processors: server.processors,
