@@ -267,6 +267,25 @@ const ServerCalculator = () => {
     { name: 'Usable Storage', value: servers.reduce((acc, server) => acc + calculateTotalStorage(server), 0) }
   ];
 
+  const groupIdenticalServers = (servers: Server[]) => {
+    const groups = servers.reduce((acc, server) => {
+      const key = `${server.name}-${server.processorId}-${server.processors}-${server.rackUnits}-${server.disks}-${server.diskSize}-${server.raidType}-${server.ports10_25GB}-${server.ports100GB}-${server.ports32_64GB}`;
+      if (!acc[key]) {
+        acc[key] = {
+          ...server,
+          quantity: 1,
+          ids: [server.id]
+        };
+      } else {
+        acc[key].quantity += 1;
+        acc[key].ids.push(server.id);
+      }
+      return acc;
+    }, {} as Record<string, Server & { quantity: number; ids: string[] }>);
+
+    return Object.values(groups);
+  };
+
   if (!selectedProcessor) {
     return <div>Loading processors...</div>;
   }
@@ -516,31 +535,33 @@ const ServerCalculator = () => {
               </span>
             </div>
             <div className="space-y-1 max-h-[250px] overflow-y-auto">
-              {servers.map(server => {
-                const processor = processors.find(p => p.id === server.processorId);
+              {groupIdenticalServers(servers).map(group => {
+                const processor = processors.find(p => p.id === group.processorId);
                 return (
                   <div
-                    key={server.id}
+                    key={group.ids[0]}
                     className="bg-slate-700/50 p-2 rounded-lg flex items-center justify-between"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <Server size={14} className="text-blue-400 shrink-0" />
                       <div className="min-w-0">
-                        <h3 className="font-medium text-sm truncate">{server.name}</h3>
+                        <h3 className="font-medium text-sm truncate">
+                          {group.name} {group.quantity > 1 ? `(${group.quantity}x)` : ''}
+                        </h3>
                         <p className="text-xs text-slate-400 truncate">
-                          {server.processors}x {processor?.name.split(' ').slice(-1)[0]}
+                          {group.processors}x {processor?.name.split(' ').slice(-1)[0]}
                         </p>
                       </div>
                     </div>
                     <div className="flex gap-1 shrink-0">
                       <button
-                        onClick={() => editServer(server)}
+                        onClick={() => editServer(group)}
                         className="p-1 hover:bg-slate-600 rounded-lg transition-colors"
                       >
                         <Edit2 size={12} />
                       </button>
                       <button
-                        onClick={() => deleteServer(server.id)}
+                        onClick={() => group.ids.forEach(id => deleteServer(id))}
                         className="p-1 hover:bg-red-600 rounded-lg transition-colors"
                       >
                         <Trash2 size={12} />
