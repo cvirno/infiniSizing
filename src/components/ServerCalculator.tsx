@@ -27,6 +27,9 @@ interface Server {
   disks: number;
   diskSize: number;
   raidType: 'RAID 1' | 'RAID 5' | 'RAID 6';
+  ports10_25GB: number;
+  ports100GB: number;
+  ports32_64GB: number;
 }
 
 const COLORS = ['#3B82F6', '#10B981'];
@@ -83,7 +86,10 @@ const ServerCalculator = () => {
     coresPerProcessor: 0,
     disks: 1,
     diskSize: DISK_SIZES[0],
-    raidType: 'RAID 1'
+    raidType: 'RAID 1',
+    ports10_25GB: 0,
+    ports100GB: 0,
+    ports32_64GB: 0
   });
 
   useEffect(() => {
@@ -138,7 +144,10 @@ const ServerCalculator = () => {
       coresPerProcessor: defaultProcessor?.cores || 0,
       disks: 1,
       diskSize: DISK_SIZES[0],
-      raidType: 'RAID 1'
+      raidType: 'RAID 1',
+      ports10_25GB: 0,
+      ports100GB: 0,
+      ports32_64GB: 0
     });
   };
 
@@ -161,7 +170,10 @@ const ServerCalculator = () => {
       coresPerProcessor: server.coresPerProcessor,
       disks: server.disks,
       diskSize: server.diskSize,
-      raidType: server.raidType
+      raidType: server.raidType,
+      ports10_25GB: server.ports10_25GB,
+      ports100GB: server.ports100GB,
+      ports32_64GB: server.ports32_64GB
     });
     setEditingServer(server.id);
   };
@@ -181,6 +193,14 @@ const ServerCalculator = () => {
       const processor = processors.find(p => p.id === server.processorId);
       return total + (processor?.spec_int_base ?? 0) * server.processors;
     }, 0);
+  };
+
+  const calculateTotalPorts = () => {
+    return {
+      total10_25GB: servers.reduce((acc, server) => acc + server.ports10_25GB, 0),
+      total100GB: servers.reduce((acc, server) => acc + server.ports100GB, 0),
+      total32_64GB: servers.reduce((acc, server) => acc + server.ports32_64GB, 0)
+    };
   };
 
   const exportToPDF = async () => {
@@ -347,6 +367,45 @@ const ServerCalculator = () => {
                     <option value="RAID 5">RAID 5</option>
                     <option value="RAID 6">RAID 6</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">
+                    Ports 10/25GB
+                  </label>
+                  <input
+                    type="number"
+                    value={newServer.ports10_25GB}
+                    onChange={(e) => setNewServer({ ...newServer, ports10_25GB: parseInt(e.target.value) })}
+                    className="w-full bg-slate-700 rounded-lg px-4 py-2 text-white"
+                    min="0"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">
+                    Ports 100GB
+                  </label>
+                  <input
+                    type="number"
+                    value={newServer.ports100GB}
+                    onChange={(e) => setNewServer({ ...newServer, ports100GB: parseInt(e.target.value) })}
+                    className="w-full bg-slate-700 rounded-lg px-4 py-2 text-white"
+                    min="0"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">
+                    Ports 32/64GB
+                  </label>
+                  <input
+                    type="number"
+                    value={newServer.ports32_64GB}
+                    onChange={(e) => setNewServer({ ...newServer, ports32_64GB: parseInt(e.target.value) })}
+                    className="w-full bg-slate-700 rounded-lg px-4 py-2 text-white"
+                    min="0"
+                  />
                 </div>
               </div>
 
@@ -515,6 +574,26 @@ const ServerCalculator = () => {
                 No servers added yet
               </div>
             )}
+          </div>
+        </div>
+
+        <div className="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold">Total Ports</h2>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <div className="text-sm text-slate-400 mb-1">10/25GB Ports</div>
+              <div className="text-2xl font-bold">{calculateTotalPorts().total10_25GB}</div>
+            </div>
+            <div>
+              <div className="text-sm text-slate-400 mb-1">100GB Ports</div>
+              <div className="text-2xl font-bold">{calculateTotalPorts().total100GB}</div>
+            </div>
+            <div>
+              <div className="text-sm text-slate-400 mb-1">32/64GB Ports</div>
+              <div className="text-2xl font-bold">{calculateTotalPorts().total32_64GB}</div>
+            </div>
           </div>
         </div>
 
