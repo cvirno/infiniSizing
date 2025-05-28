@@ -519,31 +519,18 @@ const ServerCalculator = () => {
               </span>
             </div>
             <div className="space-y-1 max-h-[250px] overflow-y-auto">
-              {Object.entries(
-                servers.reduce((acc, server) => {
-                  const key = `${server.name}-${server.processorId}-${server.processors}-${server.rackUnits}-${server.disks}-${server.diskSize}-${server.raidType}-${server.ports10_25GB}-${server.ports100GB}-${server.ports32_64GB}`;
-                  if (!acc[key]) {
-                    acc[key] = {
-                      ...server,
-                      quantity: 1
-                    };
-                  } else {
-                    acc[key].quantity += 1;
-                  }
-                  return acc;
-                }, {} as Record<string, Server & { quantity: number }>)
-              ).map(([key, server]) => {
+              {servers.map((server) => {
                 const processor = processors.find(p => p.id === server.processorId);
                 return (
                   <div
-                    key={key}
+                    key={server.id}
                     className="bg-slate-700/50 p-2 rounded-lg flex items-center justify-between"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <Server size={14} className="text-blue-400 shrink-0" />
                       <div className="min-w-0">
                         <h3 className="font-medium text-sm truncate">
-                          {server.name} {server.quantity > 1 ? `(${server.quantity}x)` : ''}
+                          {server.name}
                         </h3>
                         <p className="text-xs text-slate-400 truncate">
                           {server.processors}x {processor?.name.split(' ').slice(-1)[0]} • {server.rackUnits}U • {server.disks}x {formatStorage(server.diskSize)} {server.raidType}
