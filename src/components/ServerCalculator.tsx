@@ -329,50 +329,55 @@ const ServerCalculator = () => {
     return Object.values(groups);
   };
 
-  const handleEditServer = (index: number) => {
-    const server = servers[index];
-    setEditingServer({
-      ...server,
-      index,
-      quantity: server.quantity
+  const handleEditServer = (server: Server) => {
+    setNewServer({
+      name: server.name,
+      quantity: server.quantity,
+      rackUnits: server.rackUnits,
+      processorId: server.processorId,
+      processors: server.processors,
+      coresPerProcessor: server.coresPerProcessor,
+      disks: server.disks,
+      diskSize: server.diskSize,
+      raidType: server.raidType,
+      ports10_25GB: server.ports10_25GB,
+      ports100GB: server.ports100GB,
+      ports32_64GB: server.ports32_64GB
     });
-    setShowEditModal(true);
+    setEditingServer(server.id);
   };
 
   const handleSaveEdit = () => {
     if (!editingServer) return;
 
-    const updatedServers = [...servers];
-    const serverToUpdate = updatedServers[editingServer.index];
+    const serverToUpdate = servers.find(server => server.id === editingServer);
+    if (!serverToUpdate) return;
 
-    // Atualiza o servidor sendo editado
-    updatedServers[editingServer.index] = {
-      ...editingServer,
-      quantity: editingServer.quantity
-    };
+    // Encontra todos os servidores idênticos
+    const identicalServers = servers.filter(server => 
+      server.name === serverToUpdate.name &&
+      server.processorId === serverToUpdate.processorId &&
+      server.processors === serverToUpdate.processors &&
+      server.rackUnits === serverToUpdate.rackUnits &&
+      server.disks === serverToUpdate.disks &&
+      server.diskSize === serverToUpdate.diskSize &&
+      server.raidType === serverToUpdate.raidType &&
+      server.ports10_25GB === serverToUpdate.ports10_25GB &&
+      server.ports100GB === serverToUpdate.ports100GB &&
+      server.ports32_64GB === serverToUpdate.ports32_64GB
+    );
 
-    // Atualiza todos os servidores idênticos
-    updatedServers.forEach((server, index) => {
-      if (index !== editingServer.index && 
-          server.name === serverToUpdate.name &&
-          server.processorId === serverToUpdate.processorId &&
-          server.processors === serverToUpdate.processors &&
-          server.rackUnits === serverToUpdate.rackUnits &&
-          server.disks === serverToUpdate.disks &&
-          server.diskSize === serverToUpdate.diskSize &&
-          server.raidType === serverToUpdate.raidType &&
-          server.ports10_25GB === serverToUpdate.ports10_25GB &&
-          server.ports100GB === serverToUpdate.ports100GB &&
-          server.ports32_64GB === serverToUpdate.ports32_64GB) {
-        updatedServers[index] = {
-          ...editingServer,
-          quantity: editingServer.quantity
-        };
-      }
-    });
+    // Remove os servidores idênticos
+    const remainingServers = servers.filter(server => !identicalServers.some(s => s.id === server.id));
 
-    setServers(updatedServers);
-    setShowEditModal(false);
+    // Adiciona a nova quantidade de servidores
+    const newServers = Array.from({ length: newServer.quantity }, (_, index) => ({
+      ...newServer,
+      id: `${Date.now()}-${index}`,
+      name: newServer.name
+    }));
+
+    setServers([...remainingServers, ...newServers]);
     setEditingServer(null);
   };
 
