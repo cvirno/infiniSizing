@@ -16,6 +16,13 @@ interface Processor {
   tdp: number;
 }
 
+interface Rack {
+  id: string;
+  name: string;
+  totalUnits: number;
+  usedUnits: number;
+}
+
 interface Server {
   id: string;
   name: string;
@@ -30,6 +37,7 @@ interface Server {
   ports10_25GB: number;
   ports100GB: number;
   ports32_64GB: number;
+  rackId: string;
 }
 
 const COLORS = ['#3B82F6', '#10B981'];
@@ -72,6 +80,12 @@ const formatStorage = (gb: number): string => {
 const ServerCalculator = () => {
   const reportRef = useRef<HTMLDivElement>(null);
   const [servers, setServers] = useState<Server[]>([]);
+  const [racks, setRacks] = useState<Rack[]>([{
+    id: 'rack-1',
+    name: 'Rack 1',
+    totalUnits: 42,
+    usedUnits: 0
+  }]);
   const [editingServer, setEditingServer] = useState<string | null>(null);
   const [rackView, setRackView] = useState<'front' | 'rear'>('front');
   const [considerNPlusOne, setConsiderNPlusOne] = useState(false);
@@ -89,7 +103,8 @@ const ServerCalculator = () => {
     raidType: 'RAID 1',
     ports10_25GB: 0,
     ports100GB: 0,
-    ports32_64GB: 0
+    ports32_64GB: 0,
+    rackId: 'rack-1'
   });
 
   useEffect(() => {
@@ -126,12 +141,33 @@ const ServerCalculator = () => {
       ));
       setEditingServer(null);
     } else {
+      const currentRack = racks.find(r => r.id === newServer.rackId);
+      const totalUnitsNeeded = newServer.quantity * newServer.rackUnits;
+      
+      if (currentRack && (currentRack.usedUnits + totalUnitsNeeded) > 42) {
+        const newRackId = `rack-${racks.length + 1}`;
+        setRacks([...racks, {
+          id: newRackId,
+          name: `Rack ${racks.length + 1}`,
+          totalUnits: 42,
+          usedUnits: 0
+        }]);
+        newServer.rackId = newRackId;
+      }
+
       const newServers = Array.from({ length: newServer.quantity }, (_, index) => ({
         ...newServer,
         id: `${Date.now()}-${index}`,
         name: newServer.quantity > 1 ? `${newServer.name}-${index + 1}` : newServer.name
       }));
+
       setServers([...servers, ...newServers]);
+
+      setRacks(racks.map(rack => 
+        rack.id === newServer.rackId 
+          ? { ...rack, usedUnits: rack.usedUnits + totalUnitsNeeded }
+          : rack
+      ));
     }
 
     const defaultProcessor = processors[0];
@@ -147,12 +183,21 @@ const ServerCalculator = () => {
       raidType: 'RAID 1',
       ports10_25GB: 0,
       ports100GB: 0,
-      ports32_64GB: 0
+      ports32_64GB: 0,
+      rackId: racks[0].id
     });
   };
 
   const deleteServer = (id: string) => {
-    setServers(servers.filter(server => server.id !== id));
+    const serverToDelete = servers.find(s => s.id === id);
+    if (serverToDelete) {
+      setServers(servers.filter(server => server.id !== id));
+      setRacks(racks.map(rack => 
+        rack.id === serverToDelete.rackId 
+          ? { ...rack, usedUnits: rack.usedUnits - serverToDelete.rackUnits }
+          : rack
+      ));
+    }
   };
 
   const clearAllServers = () => {
@@ -173,7 +218,8 @@ const ServerCalculator = () => {
       raidType: server.raidType,
       ports10_25GB: server.ports10_25GB,
       ports100GB: server.ports100GB,
-      ports32_64GB: server.ports32_64GB
+      ports32_64GB: server.ports32_64GB,
+      rackId: server.rackId
     });
     setEditingServer(server.id);
   };
@@ -406,6 +452,23 @@ const ServerCalculator = () => {
                     className="w-full bg-slate-700 rounded-lg px-4 py-2 text-white"
                     min="0"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">
+                    Rack
+                  </label>
+                  <select
+                    value={newServer.rackId}
+                    onChange={(e) => setNewServer({ ...newServer, rackId: e.target.value })}
+                    className="w-full bg-slate-700 rounded-lg px-4 py-2 text-white"
+                  >
+                    {racks.map((rack) => (
+                      <option key={rack.id} value={rack.id}>
+                        {rack.name} ({rack.usedUnits}/{rack.totalUnits}U)
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -643,7 +706,17 @@ const ServerCalculator = () => {
                 </button>
               </div>
             </div>
-            <RackVisualization servers={servers} view={rackView} />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {racks.map(rack => (
+                <div key={rack.id} className="bg-slate-700/30 p-4 rounded-lg">
+                  <h3 className="text-lg font-semibold mb-2">{rack.name}</h3>
+                  <RackVisualization 
+                    servers={servers.filter(s => s.rackId === rack.id)} 
+                    view={rackView} 
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
