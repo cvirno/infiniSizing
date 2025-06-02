@@ -8,18 +8,19 @@ import VsanCalculator from './components/VsanCalculator';
 import NutanixCalculator from './components/NutanixCalculator';
 import SapHanaCalculator from './components/SapHanaCalculator';
 import S2DCalculator from './components/S2DCalculator';
+import CohesityBackupSizing from './components/CohesityBackupSizing';
 import Header from './components/Header';
 import Login from './components/Login';
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'physical' | 'virtual' | 'backup' | 'storage' | 'vsan' | 'nutanix' | 'sap' | 's2d'>('physical');
+  const [activeTab, setActiveTab] = useState<'physical' | 'virtual' | 'backup' | 'storage' | 'vsan' | 'nutanix' | 'sap' | 's2d' | 'cohesity'>('physical');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const handleLogin = (email: string, password: string) => {
     setIsAuthenticated(true);
   };
 
-  const handleTabChange = (tab: 'physical' | 'virtual' | 'backup' | 'storage' | 'vsan' | 'nutanix' | 'sap' | 's2d') => {
+  const handleTabChange = (tab: 'physical' | 'virtual' | 'backup' | 'storage' | 'vsan' | 'nutanix' | 'sap' | 's2d' | 'cohesity') => {
     setActiveTab(tab);
   };
 
@@ -102,6 +103,16 @@ function App() {
                 S2D
               </button>
               <button
+                onClick={() => handleTabChange('cohesity')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm font-medium transition-all ${
+                  activeTab === 'cohesity'
+                    ? 'bg-blue-600 shadow-sm shadow-blue-500/30'
+                    : 'bg-slate-800/50 hover:bg-slate-700/50'
+                }`}
+              >
+                Cohesity Sizing
+              </button>
+              <button
                 onClick={() => handleTabChange('backup')}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm font-medium transition-all ${
                   activeTab === 'backup'
@@ -135,6 +146,7 @@ function App() {
               {activeTab === 'nutanix' && <NutanixCalculator />}
               {activeTab === 'sap' && <SapHanaCalculator />}
               {activeTab === 's2d' && <S2DCalculator />}
+              {activeTab === 'cohesity' && <CohesityBackupSizing />}
             </div>
           </div>
           <footer className="text-center py-1 text-slate-400 text-[10px]">
