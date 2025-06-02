@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Server as ServerTower, Cpu, Database, HardDrive, Network, Box, DatabaseIcon } from 'lucide-react';
+import { Server as ServerTower, Cpu, Database, HardDrive, Network, Box, DatabaseIcon, Layers } from 'lucide-react';
 import ServerCalculator from './components/ServerCalculator';
 import VirtualizationCalculator from './components/VirtualizationCalculator';
 import BackupCalculator from './components/BackupCalculator';
@@ -7,18 +7,19 @@ import StorageCalculator from './components/StorageCalculator';
 import VsanCalculator from './components/VsanCalculator';
 import NutanixCalculator from './components/NutanixCalculator';
 import SapHanaCalculator from './components/SapHanaCalculator';
+import S2DCalculator from './components/S2DCalculator';
 import Header from './components/Header';
 import Login from './components/Login';
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'physical' | 'virtual' | 'backup' | 'storage' | 'vsan' | 'nutanix' | 'sap'>('physical');
+  const [activeTab, setActiveTab] = useState<'physical' | 'virtual' | 'backup' | 'storage' | 'vsan' | 'nutanix' | 'sap' | 's2d'>('physical');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const handleLogin = (email: string, password: string) => {
     setIsAuthenticated(true);
   };
 
-  const handleTabChange = (tab: 'physical' | 'virtual' | 'backup' | 'storage' | 'vsan' | 'nutanix' | 'sap') => {
+  const handleTabChange = (tab: 'physical' | 'virtual' | 'backup' | 'storage' | 'vsan' | 'nutanix' | 'sap' | 's2d') => {
     setActiveTab(tab);
   };
 
@@ -90,6 +91,17 @@ function App() {
                 Nutanix
               </button>
               <button
+                onClick={() => handleTabChange('s2d')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm font-medium transition-all ${
+                  activeTab === 's2d'
+                    ? 'bg-blue-600 shadow-sm shadow-blue-500/30'
+                    : 'bg-slate-800/50 hover:bg-slate-700/50'
+                }`}
+              >
+                <Layers size={16} />
+                S2D
+              </button>
+              <button
                 onClick={() => handleTabChange('backup')}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm font-medium transition-all ${
                   activeTab === 'backup'
@@ -114,15 +126,16 @@ function App() {
             </div>
 
             {/* Main Content */}
-            <main className="pb-2">
+            <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-4">
               {activeTab === 'physical' && <ServerCalculator />}
               {activeTab === 'virtual' && <VirtualizationCalculator />}
+              {activeTab === 'backup' && <BackupCalculator />}
               {activeTab === 'storage' && <StorageCalculator />}
               {activeTab === 'vsan' && <VsanCalculator />}
               {activeTab === 'nutanix' && <NutanixCalculator />}
-              {activeTab === 'backup' && <BackupCalculator />}
               {activeTab === 'sap' && <SapHanaCalculator />}
-            </main>
+              {activeTab === 's2d' && <S2DCalculator />}
+            </div>
           </div>
           <footer className="text-center py-1 text-slate-400 text-[10px]">
             <p>Desenvolvido por Cesar Virno © {new Date().getFullYear()}</p>
