@@ -5,18 +5,18 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
 interface StorageConfig {
+  desiredCapacity: number;
   growthRate: number;
   raidType: 'RAID 1' | 'RAID 5' | 'RAID 6' | 'RAID 10';
   diskSize: number;
   numberOfDisks: number;
   forecastYears: number;
-  storageEfficiency: number; // 1:1 até 10:1 (combina dedup + compressão)
 }
 
 interface StorageAssistantConfig {
   currentCapacity: number;
   growthRate: number;
-  storageEfficiency: number; // 1:1 até 10:1 (combina dedup + compressão)
+  storageEfficiency: number;
   snapshots: {
     frequency: 'daily' | 'weekly' | 'monthly';
     retention: number;
@@ -58,7 +58,6 @@ interface StorageRecommendation {
   };
   effectiveThroughput: number;
   raidOverhead: number;
-  storageEfficiency: number;
 }
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
@@ -86,36 +85,18 @@ const DISK_SIZES = [
   24576,    // 24 TB
 ];
 
-// Função para calcular o fator RAID baseado no número de discos
-const calculateRAIDFactor = (raidType: string, numberOfDisks: number): number => {
-  switch (raidType) {
-    case 'RAID 1':
-      return 0.5; // Sempre 50% (espelhamento - 2 discos, 1 para dados, 1 para espelho)
-    case 'RAID 5':
-      return numberOfDisks >= 3 ? (numberOfDisks - 1) / numberOfDisks : 0; // n-1 discos para dados, 1 para paridade
-    case 'RAID 6':
-      return numberOfDisks >= 4 ? (numberOfDisks - 2) / numberOfDisks : 0; // n-2 discos para dados, 2 para paridade dupla
-    case 'RAID 10':
-      return 0.5; // Sempre 50% (espelhamento + striping - metade dos discos para espelho)
-    default:
-      return 1;
-  }
+const RAID_FACTORS = {
+  'RAID 1': 0.5,
+  'RAID 5': 0.75,
+  'RAID 6': 0.67,
+  'RAID 10': 0.5
 };
 
-// Função para calcular o overhead RAID baseado no número de discos
-const calculateRAIDOverhead = (raidType: string, numberOfDisks: number): number => {
-  switch (raidType) {
-    case 'RAID 1':
-      return 0.5; // 50% de overhead (espelhamento)
-    case 'RAID 5':
-      return numberOfDisks >= 3 ? 1 / numberOfDisks : 0; // 1 disco de paridade
-    case 'RAID 6':
-      return numberOfDisks >= 4 ? 2 / numberOfDisks : 0; // 2 discos de paridade
-    case 'RAID 10':
-      return 0.5; // 50% de overhead (espelhamento + striping)
-    default:
-      return 0;
-  }
+const RAID_OVERHEAD = {
+  'RAID 1': 0.5,    // 50% de overhead (espelhamento)
+  'RAID 5': 0.75,   // 25% de overhead (paridade)
+  'RAID 6': 0.67,   // 33% de overhead (dupla paridade)
+  'RAID 10': 0.5    // 50% de overhead (espelhamento + striping)
 };
 
 const DISK_PERFORMANCE = {
@@ -229,12 +210,12 @@ const StorageCalculator = () => {
   const [recommendations, setRecommendations] = useState<StorageRecommendation | null>(null);
 
   const [config, setConfig] = useState<StorageConfig>({
-    growthRate: 0,
+    desiredCapacity: 1000,
+    growthRate: 20,
     raidType: 'RAID 5',
     diskSize: DISK_SIZES[0],
     numberOfDisks: 4,
-    forecastYears: 3,
-    storageEfficiency: 1 // 1:1 (sem otimização)
+    forecastYears: 3
   });
 
   const [selectedDiskModel, setSelectedDiskModel] = useState<{
@@ -251,35 +232,23 @@ const StorageCalculator = () => {
 
   const calculateUsableCapacity = () => {
     const rawCapacity = calculateRawCapacity();
-    const raidFactor = calculateRAIDFactor(config.raidType, config.numberOfDisks);
-    return rawCapacity * raidFactor;
-  };
-
-  const calculateEfficientCapacity = () => {
-    return calculateUsableCapacity() * config.storageEfficiency;
+    return rawCapacity * RAID_FACTORS[config.raidType];
   };
 
   const calculateFutureCapacity = () => {
-    // Se o growth rate for 0, o Future Capacity deve ser igual ao Efficient Capacity
-    if (config.growthRate === 0) {
-      return calculateEfficientCapacity();
-    }
-    return calculateEfficientCapacity() * Math.pow(1 + (config.growthRate / 100), config.forecastYears);
+    return calculateUsableCapacity() * Math.pow(1 + (config.growthRate / 100), config.forecastYears);
   };
 
   const generateCapacityForecast = () => {
     return Array.from({ length: config.forecastYears + 1 }, (_, i) => ({
       year: i,
-      capacity: config.growthRate === 0 
-        ? calculateEfficientCapacity() 
-        : calculateEfficientCapacity() * Math.pow(1 + (config.growthRate / 100), i)
+      capacity: calculateUsableCapacity() * Math.pow(1 + (config.growthRate / 100), i)
     }));
   };
 
   const capacityData = [
     { name: 'Raw Capacity', value: calculateRawCapacity() },
     { name: 'Usable Capacity', value: calculateUsableCapacity() },
-    { name: 'Efficient Capacity', value: calculateEfficientCapacity() },
     { name: 'Future Capacity', value: calculateFutureCapacity() }
   ];
 
@@ -337,7 +306,7 @@ const StorageCalculator = () => {
   };
 
   const processStep3 = (): Step3Result => {
-    const raidOverhead = calculateRAIDOverhead(assistantConfig.raidLevel, config.numberOfDisks);
+    const raidOverhead = RAID_OVERHEAD[assistantConfig.raidLevel as keyof typeof RAID_OVERHEAD];
     const replicationOverhead = assistantConfig.replication === 'sync' ? 2 : 1;
     const minimumHosts = 2 * assistantConfig.ftt + 1;
 
@@ -364,19 +333,19 @@ const StorageCalculator = () => {
   };
 
   const calculateIOPS = (rawIOPS: number, raidLevel: string, readWriteRatio: number) => {
-    const raidOverhead = calculateRAIDOverhead(raidLevel, config.numberOfDisks);
-    const writePenalty: { [key: string]: number } = {
+    const raidOverhead = RAID_OVERHEAD[raidLevel as keyof typeof RAID_OVERHEAD];
+    const writePenalty = {
       'RAID 1': 2,   // Cada escrita requer 2 operações
       'RAID 5': 4,   // Cada escrita requer 4 operações (read old data, read old parity, write new data, write new parity)
       'RAID 6': 6,   // Cada escrita requer 6 operações (similar ao RAID 5, mas com dupla paridade)
       'RAID 10': 2   // Cada escrita requer 2 operações (espelhamento)
-    };
+    }[raidLevel as keyof typeof RAID_OVERHEAD];
 
     const readIOPS = rawIOPS * (readWriteRatio / 100);
     const writeIOPS = rawIOPS * ((100 - readWriteRatio) / 100);
     
     // Aplicar penalidade de escrita
-    const effectiveWriteIOPS = writeIOPS / (writePenalty[raidLevel] || 1);
+    const effectiveWriteIOPS = writeIOPS / writePenalty;
     
     // Calcular IOPS efetivos
     const effectiveIOPS = readIOPS + effectiveWriteIOPS;
@@ -390,7 +359,7 @@ const StorageCalculator = () => {
       netIOPS,
       readIOPS,
       writeIOPS,
-      writePenalty: writePenalty[raidLevel] || 1
+      writePenalty
     };
   };
 
@@ -398,7 +367,7 @@ const StorageCalculator = () => {
     if (!selectedDiskModel) return null;
 
     const { iops, throughput, size } = selectedDiskModel;
-    const raidOverhead = calculateRAIDOverhead(assistantConfig.raidLevel, config.numberOfDisks);
+    const raidOverhead = RAID_OVERHEAD[assistantConfig.raidLevel as keyof typeof RAID_OVERHEAD];
     
     // Calcular IOPS efetivos
     const iopsCalculations = calculateIOPS(
@@ -443,7 +412,7 @@ const StorageCalculator = () => {
     if (!selectedDiskModel) return [];
 
     const { iops, throughput } = selectedDiskModel;
-    const raidOverhead = calculateRAIDOverhead(assistantConfig.raidLevel, config.numberOfDisks);
+    const raidOverhead = RAID_OVERHEAD[assistantConfig.raidLevel as keyof typeof RAID_OVERHEAD];
     
     const iopsCalculations = calculateIOPS(
       iops,
@@ -502,8 +471,7 @@ const StorageCalculator = () => {
           writePenalty: 0
         },
         effectiveThroughput: diskRecommendation?.effectiveThroughput || 0,
-        raidOverhead: step3Result.raidOverhead * 100,
-        storageEfficiency: assistantConfig.storageEfficiency
+        raidOverhead: step3Result.raidOverhead * 100
       };
       
       setRecommendations(finalRecommendation);
@@ -609,22 +577,15 @@ const StorageCalculator = () => {
                   <label className="block text-sm font-medium text-slate-300 mb-2">
                     Taxa de Eficiência de Storage
                   </label>
-                  <div className="space-y-2">
-                    <input
-                      type="range"
-                      min="1"
-                      max="10"
-                      step="0.1"
-                      value={assistantConfig.storageEfficiency}
-                      onChange={(e) => setAssistantConfig({ ...assistantConfig, storageEfficiency: Number(e.target.value) })}
-                      className="w-full appearance-none cursor-pointer"
-                    />
-                    <div className="flex justify-between text-xs text-slate-400">
-                      <span>1:1 (Sem otimização)</span>
-                      <span className="font-medium text-slate-300">{assistantConfig.storageEfficiency}:1</span>
-                      <span>10:1 (Máxima otimização)</span>
-                    </div>
-                  </div>
+                  <input
+                    type="number"
+                    value={assistantConfig.storageEfficiency || ''}
+                    onChange={(e) => handleNumericInput(e.target.value, 'storageEfficiency')}
+                    className="w-full bg-slate-700 rounded-lg px-4 py-2 text-white"
+                    min="1"
+                    step="0.1"
+                    placeholder="ex: 2.0 para deduplicação 2:1"
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">
@@ -645,7 +606,6 @@ const StorageCalculator = () => {
                 <div className="space-y-2">
                   <p>Capacidade Bruta: {processStep1().rawCapacity.toFixed(2)} TB</p>
                   <p>Capacidade Utilizável: {processStep1().usableCapacity.toFixed(2)} TB</p>
-                  <p>Eficiência de Storage: {assistantConfig.storageEfficiency}:1 ratio</p>
                 </div>
               </div>
             </div>
@@ -786,7 +746,7 @@ const StorageCalculator = () => {
               {diskRecommendation && (
                 <div className="mt-4 p-4 bg-slate-700/50 rounded-lg">
                   <h4 className="text-lg font-medium mb-2">Recomendação de Discos</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <h5 className="font-medium mb-2">Quantidade de Discos</h5>
                       <div className="space-y-2">
@@ -956,57 +916,44 @@ const StorageCalculator = () => {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl">
-            <div className="flex items-center gap-2 text-slate-400 mb-2">
-              <HardDrive size={20} />
-              <span>Raw Capacity</span>
-            </div>
-            <div className="text-2xl font-bold">{formatStorage(calculateRawCapacity())}</div>
-            <div className="text-sm text-slate-400 mt-1">
-              Total Storage
-            </div>
-          </div>
-
-          <div className="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl">
-            <div className="flex items-center gap-2 text-slate-400 mb-2">
-              <Database size={20} />
-              <span>Usable Capacity</span>
-            </div>
-            <div className="text-2xl font-bold">{formatStorage(calculateUsableCapacity())}</div>
-            <div className="text-sm text-slate-400 mt-1">
-              After RAID ({config.raidType})
-            </div>
-          </div>
-
-          <div className="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl">
-            <div className="flex items-center gap-2 text-slate-400 mb-2">
-              <HardDrive size={20} />
-              <span>Efficient Capacity</span>
-            </div>
-            <div className="text-2xl font-bold">{formatStorage(calculateEfficientCapacity())}</div>
-            <div className="text-sm text-slate-400 mt-1">
-              With {config.storageEfficiency}:1 efficiency
-            </div>
-          </div>
-
-          <div className="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl">
-            <div className="flex items-center gap-2 text-slate-400 mb-2">
-              <HardDrive size={20} />
-              <span>Future Capacity</span>
-            </div>
-            <div className="text-2xl font-bold">{formatStorage(calculateFutureCapacity())}</div>
-            <div className="text-sm text-slate-400 mt-1">
-              In {config.forecastYears} years
-            </div>
-          </div>
-        </div>
-      )}
-
-      {!useAssistant && (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 mt-8">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           <div className="xl:col-span-2">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl">
+                <div className="flex items-center gap-2 text-slate-400 mb-2">
+                  <HardDrive size={20} />
+                  <span>Raw Capacity</span>
+                </div>
+                <div className="text-2xl font-bold">{formatStorage(calculateRawCapacity())}</div>
+                <div className="text-sm text-slate-400 mt-1">
+                  Total Storage
+                </div>
+              </div>
+
+              <div className="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl">
+                <div className="flex items-center gap-2 text-slate-400 mb-2">
+                  <Database size={20} />
+                  <span>Usable Capacity</span>
+                </div>
+                <div className="text-2xl font-bold">{formatStorage(calculateUsableCapacity())}</div>
+                <div className="text-sm text-slate-400 mt-1">
+                  After RAID ({config.raidType})
+                </div>
+              </div>
+
+              <div className="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl">
+                <div className="flex items-center gap-2 text-slate-400 mb-2">
+                  <HardDrive size={20} />
+                  <span>Future Capacity</span>
+                </div>
+                <div className="text-2xl font-bold">{formatStorage(calculateFutureCapacity())}</div>
+                <div className="text-sm text-slate-400 mt-1">
+                  In {config.forecastYears} years
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
               <div className="bg-slate-800/50 backdrop-blur-sm p-6 rounded-xl">
                 <h3 className="text-lg font-semibold mb-4">Capacity Distribution</h3>
                 <ResponsiveContainer width="100%" height={300}>
@@ -1159,27 +1106,15 @@ const StorageCalculator = () => {
                   max="10"
                 />
               </div>
+            </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">
-                  Storage Efficiency (1:1 até 10:1)
-                </label>
-                <div className="space-y-2">
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    step="0.1"
-                    value={config.storageEfficiency}
-                    onChange={(e) => setConfig({ ...config, storageEfficiency: Number(e.target.value) })}
-                    className="w-full appearance-none cursor-pointer"
-                  />
-                  <div className="flex justify-between text-xs text-slate-400">
-                    <span>1:1 (Sem otimização)</span>
-                    <span className="font-medium text-slate-300">{config.storageEfficiency}:1</span>
-                    <span>10:1 (Máxima otimização)</span>
-                  </div>
-                </div>
+            <div className="mt-6 p-4 bg-slate-700/50 rounded-lg">
+              <h4 className="text-sm font-medium text-slate-300 mb-2">RAID Configuration Details</h4>
+              <div className="space-y-2 text-sm text-slate-400">
+                <p>RAID 1: 50% usable capacity (mirroring)</p>
+                <p>RAID 5: 75% usable capacity (single parity)</p>
+                <p>RAID 6: 67% usable capacity (double parity)</p>
+                <p>RAID 10: 50% usable capacity (mirror + stripe)</p>
               </div>
             </div>
           </div>
@@ -1189,7 +1124,7 @@ const StorageCalculator = () => {
       {recommendations && (
         <div className="bg-slate-800/50 backdrop-blur-sm p-6 rounded-xl mt-8">
           <h3 className="text-xl font-semibold mb-4">Recomendações Finais</h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <h4 className="text-lg font-medium mb-2">Capacidade</h4>
               <div className="space-y-2">
@@ -1213,21 +1148,6 @@ const StorageCalculator = () => {
                 <p>Número Mínimo de Hosts: {recommendations.minimumHosts}</p>
               </div>
             </div>
-            <div>
-              <h4 className="text-lg font-medium mb-2">Eficiência de Storage</h4>
-              <div className="space-y-2">
-                <p>Eficiência: {recommendations.storageEfficiency}:1 ratio</p>
-                <p>Capacidade Efetiva: {(recommendations.usableCapacity * recommendations.storageEfficiency).toFixed(2)} TB</p>
-              </div>
-            </div>
-            <div>
-              <h4 className="text-lg font-medium mb-2">Detalhamento da Eficiência</h4>
-              <div className="space-y-2">
-                <p>Deduplicação: {(Math.sqrt(recommendations.storageEfficiency)).toFixed(1)}:1 ratio</p>
-                <p>Compressão: {(Math.sqrt(recommendations.storageEfficiency)).toFixed(1)}:1 ratio</p>
-                <p>Economia Total: {((recommendations.storageEfficiency - 1) * 100).toFixed(0)}%</p>
-              </div>
-            </div>
           </div>
           {recommendations.warnings && recommendations.warnings.length > 0 && (
             <div className="mt-4 p-4 bg-yellow-500/20 rounded-lg">
@@ -1246,67 +1166,3 @@ const StorageCalculator = () => {
 };
 
 export default StorageCalculator;
-
-// Estilos CSS para a barra deslizante
-const sliderStyles = `
-  input[type="range"] {
-    -webkit-appearance: none;
-    appearance: none;
-    background: #475569;
-    cursor: pointer;
-    width: 100%;
-    height: 8px;
-    border-radius: 4px;
-    outline: none;
-  }
-
-  input[type="range"]::-webkit-slider-track {
-    background: #475569;
-    height: 8px;
-    border-radius: 4px;
-  }
-
-  input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    background: #3b82f6;
-    height: 20px;
-    width: 20px;
-    border-radius: 50%;
-    cursor: pointer;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    border: none;
-  }
-
-  input[type="range"]::-webkit-slider-thumb:hover {
-    background: #2563eb;
-  }
-
-  input[type="range"]::-moz-range-track {
-    background: #475569;
-    height: 8px;
-    border-radius: 4px;
-    border: none;
-  }
-
-  input[type="range"]::-moz-range-thumb {
-    background: #3b82f6;
-    height: 20px;
-    width: 20px;
-    border-radius: 50%;
-    cursor: pointer;
-    border: none;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  }
-
-  input[type="range"]::-moz-range-thumb:hover {
-    background: #2563eb;
-  }
-`;
-
-// Adicionar estilos ao head do documento
-if (typeof document !== 'undefined') {
-  const style = document.createElement('style');
-  style.textContent = sliderStyles;
-  document.head.appendChild(style);
-}

@@ -255,10 +255,14 @@ const SapHanaCalculator: React.FC = () => {
   // Nova função para calcular servidores de aplicação
   const calculateAppServers = async (sapsValue: string, memoryValue: string) => {
     try {
+      console.log('Iniciando cálculo...');
       const sapsNum = Number(sapsValue);
       const memNum = Number(memoryValue);
 
+      console.log('Valores recebidos:', { sapsNum, memNum });
+
       if (!sapsNum || !memNum) {
+        console.log('Valores inválidos');
         setAppServers([]);
         return;
       }
@@ -268,12 +272,14 @@ const SapHanaCalculator: React.FC = () => {
       const minServers = 3;
       const memBasedServers = Math.ceil(memNum / 2048);
       const numServers = Math.max(minServers, memBasedServers);
+      console.log('Número de servidores calculado:', numServers);
       
       // Calcula SAPS necessário considerando apenas a utilização
       const requiredSaps = Math.ceil(sapsNum / (utilization / 100));
       // Divide SAPS pelo número de servidores ativos (excluindo N+1)
       const activeServers = numServers - 1;
       const sapsPerServer = Math.ceil(requiredSaps / activeServers);
+      console.log('SAPS por servidor:', sapsPerServer);
 
       // Usa a lista de processadores local
       let candidates: Processor[] = [];
@@ -290,8 +296,10 @@ const SapHanaCalculator: React.FC = () => {
       // Filtra processadores que atendem o SAPS por servidor
       // Considera que cada servidor terá 2 processadores
       const validCandidates = candidates.filter(cpu => (cpu.sapsTotal * 2) >= sapsPerServer);
+      console.log('Candidatos válidos:', validCandidates);
 
       if (validCandidates.length === 0) {
+        console.log('Nenhum processador atende aos requisitos');
         setAppServers([]);
         return;
       }
@@ -307,6 +315,7 @@ const SapHanaCalculator: React.FC = () => {
       });
 
       const selectedProcessor = validCandidates[0];
+      console.log('Processador selecionado:', selectedProcessor);
 
       // Cria array com o número necessário de servidores
       // Cada servidor terá 2 processadores
@@ -317,6 +326,7 @@ const SapHanaCalculator: React.FC = () => {
       // Marca o último servidor como N+1
       servers[servers.length - 1].isNPlusOne = true;
       
+      console.log('Configuração final:', servers);
       setAppServers(servers);
 
     } catch (error) {
@@ -327,6 +337,7 @@ const SapHanaCalculator: React.FC = () => {
 
   // Handlers para Application Sizing
   const handleAppSapsChange = async (value: string) => {
+    console.log('SAPS alterado:', value);
     setAppSaps(value);
     if (value && appMemory) {
       await calculateAppServers(value, appMemory);
@@ -334,6 +345,7 @@ const SapHanaCalculator: React.FC = () => {
   };
 
   const handleAppMemoryChange = async (value: string) => {
+    console.log('Memória alterada:', value);
     setAppMemory(value);
     if (value && appSaps) {
       await calculateAppServers(appSaps, value);

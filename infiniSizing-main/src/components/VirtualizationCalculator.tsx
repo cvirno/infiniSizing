@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Cpu, Server, AlertTriangle, HardDrive, Gauge, Layers, Activity, Power, MemoryStick, Plus, Trash2 } from 'lucide-react';
+import { Cpu, Server, AlertTriangle, HardDrive, Gauge, Layers, Activity, Power, MemoryStick } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { supabase } from '../lib/supabase';
 
@@ -29,61 +29,6 @@ const DISK_SIZES = [
 
 const MEMORY_DIMM_SIZES = [32, 64, 128, 256];
 const MAX_DIMMS_PER_SERVER = 32;
-
-// Lista local de processadores para virtualização
-const VIRTUALIZATION_PROCESSORS = [
-  { id: '1', name: 'Intel Xeon Platinum 8593Q', cores: 64, frequency: '2.2 GHz', generation: '5th Gen', spec_int_base: 130000, tdp: 385 },
-  { id: '2', name: 'Intel Xeon Platinum 8592V', cores: 64, frequency: '2.0 GHz', generation: '5th Gen', spec_int_base: 120000, tdp: 330 },
-  { id: '3', name: 'Intel Xeon Platinum 8592+', cores: 64, frequency: '1.9 GHz', generation: '5th Gen', spec_int_base: 125000, tdp: 350 },
-  { id: '4', name: 'Intel Xeon Platinum 8580', cores: 60, frequency: '2.0 GHz', generation: '5th Gen', spec_int_base: 120000, tdp: 300 },
-  { id: '5', name: 'Intel Xeon Platinum 8570', cores: 56, frequency: '2.1 GHz', generation: '5th Gen', spec_int_base: 130000, tdp: 350 },
-  { id: '6', name: 'Intel Xeon Platinum 8562Y+', cores: 64, frequency: '2.8 GHz', generation: '5th Gen', spec_int_base: 90000, tdp: 300 },
-  { id: '7', name: 'Intel Xeon Platinum 8558Q', cores: 48, frequency: '2.7 GHz', generation: '5th Gen', spec_int_base: 90000, tdp: 350 },
-  { id: '8', name: 'Intel Xeon Platinum 8558U', cores: 48, frequency: '2.0 GHz', generation: '5th Gen', spec_int_base: 85000, tdp: 300 },
-  { id: '9', name: 'Intel Xeon Platinum 8558', cores: 48, frequency: '2.1 GHz', generation: '5th Gen', spec_int_base: 85000, tdp: 330 },
-  { id: '10', name: 'Intel Xeon Platinum 8480+', cores: 56, frequency: '2.2 GHz', generation: '4th Gen', spec_int_base: 130000, tdp: 350 },
-  { id: '11', name: 'Intel Xeon Platinum 8470Q', cores: 52, frequency: '2.1 GHz', generation: '4th Gen', spec_int_base: 90000, tdp: 350 },
-  { id: '12', name: 'Intel Xeon Platinum 8470', cores: 52, frequency: '2.0 GHz', generation: '4th Gen', spec_int_base: 90000, tdp: 350 },
-  { id: '13', name: 'Intel Xeon Platinum 8468V', cores: 48, frequency: '2.4 GHz', generation: '4th Gen', spec_int_base: 90000, tdp: 330 },
-  { id: '14', name: 'Intel Xeon Platinum 8468', cores: 48, frequency: '2.1 GHz', generation: '4th Gen', spec_int_base: 90000, tdp: 330 },
-  { id: '15', name: 'Intel Xeon Platinum 8461V', cores: 48, frequency: '2.2 GHz', generation: '4th Gen', spec_int_base: 80000, tdp: 300 },
-  { id: '16', name: 'Intel Xeon Platinum 8460H', cores: 40, frequency: '2.2 GHz', generation: '4th Gen', spec_int_base: 75000, tdp: 330 },
-  { id: '17', name: 'Intel Xeon Platinum 8454H', cores: 32, frequency: '2.1 GHz', generation: '4th Gen', spec_int_base: 60000, tdp: 270 },
-  { id: '18', name: 'Intel Xeon Platinum 8452Y', cores: 36, frequency: '2.0 GHz', generation: '4th Gen', spec_int_base: 55000, tdp: 300 },
-  { id: '19', name: 'Intel Xeon Platinum 8450H', cores: 28, frequency: '2.0 GHz', generation: '4th Gen', spec_int_base: 45000, tdp: 250 },
-  { id: '20', name: 'Intel Xeon Platinum 8444H', cores: 16, frequency: '2.9 GHz', generation: '4th Gen', spec_int_base: 35000, tdp: 270 },
-  { id: '21', name: 'Intel Xeon Gold 6558Q', cores: 32, frequency: '3.2 GHz', generation: '5th Gen', spec_int_base: 70000, tdp: 350 },
-  { id: '22', name: 'Intel Xeon Gold 6554S', cores: 36, frequency: '2.2 GHz', generation: '5th Gen', spec_int_base: 58000, tdp: 270 },
-  { id: '23', name: 'Intel Xeon Gold 6544Y', cores: 16, frequency: '3.6 GHz', generation: '5th Gen', spec_int_base: 58000, tdp: 270 },
-  { id: '24', name: 'Intel Xeon Gold 6542Y', cores: 24, frequency: '2.9 GHz', generation: '5th Gen', spec_int_base: 52000, tdp: 250 },
-  { id: '25', name: 'Intel Xeon Gold 6538Y+', cores: 32, frequency: '2.1 GHz', generation: '5th Gen', spec_int_base: 54000, tdp: 205 },
-  { id: '26', name: 'Intel Xeon Gold 6538N', cores: 32, frequency: '2.1 GHz', generation: '5th Gen', spec_int_base: 54000, tdp: 205 },
-  { id: '27', name: 'Intel Xeon Gold 6534', cores: 8, frequency: '3.9 GHz', generation: '5th Gen', spec_int_base: 25000, tdp: 195 },
-  { id: '28', name: 'Intel Xeon Gold 6530', cores: 32, frequency: '2.1 GHz', generation: '5th Gen', spec_int_base: 52000, tdp: 270 },
-  { id: '29', name: 'Intel Xeon Gold 6458Q', cores: 32, frequency: '3.1 GHz', generation: '4th Gen', spec_int_base: 65000, tdp: 350 },
-  { id: '30', name: 'Intel Xeon Gold 6454S', cores: 36, frequency: '2.2 GHz', generation: '4th Gen', spec_int_base: 58000, tdp: 270 },
-  { id: '31', name: 'Intel Xeon Gold 6448H', cores: 32, frequency: '2.4 GHz', generation: '4th Gen', spec_int_base: 65000, tdp: 250 },
-  { id: '32', name: 'Intel Xeon Gold 6444Y', cores: 16, frequency: '3.0 GHz', generation: '4th Gen', spec_int_base: 32000, tdp: 270 },
-  { id: '33', name: 'Intel Xeon Gold 6442Y', cores: 24, frequency: '2.6 GHz', generation: '4th Gen', spec_int_base: 45000, tdp: 225 },
-  { id: '34', name: 'Intel Xeon Gold 6438M', cores: 32, frequency: '2.2 GHz', generation: '4th Gen', spec_int_base: 55000, tdp: 205 },
-  { id: '35', name: 'Intel Xeon Gold 6438Y+', cores: 32, frequency: '2.0 GHz', generation: '4th Gen', spec_int_base: 48000, tdp: 205 },
-  { id: '36', name: 'Intel Xeon Gold 6434H', cores: 8, frequency: '3.7 GHz', generation: '4th Gen', spec_int_base: 22000, tdp: 195 },
-  { id: '37', name: 'Intel Xeon Gold 6434', cores: 8, frequency: '3.7 GHz', generation: '4th Gen', spec_int_base: 22000, tdp: 195 },
-  { id: '38', name: 'Intel Xeon Gold 6430', cores: 32, frequency: '2.1 GHz', generation: '4th Gen', spec_int_base: 50000, tdp: 270 },
-  { id: '39', name: 'Intel Xeon Gold 6428N', cores: 32, frequency: '1.8 GHz', generation: '4th Gen', spec_int_base: 40000, tdp: 185 },
-  { id: '40', name: 'Intel Xeon Gold 6426Y', cores: 16, frequency: '2.5 GHz', generation: '4th Gen', spec_int_base: 22000, tdp: 185 },
-  { id: '41', name: 'Intel Xeon Gold 6424N', cores: 32, frequency: '1.8 GHz', generation: '4th Gen', spec_int_base: 40000, tdp: 185 },
-  { id: '42', name: 'Intel Xeon Gold 5520+', cores: 28, frequency: '2.2 GHz', generation: '5th Gen', spec_int_base: 45000, tdp: 205 },
-  { id: '43', name: 'Intel Xeon Gold 5420+', cores: 28, frequency: '2.0 GHz', generation: '5th Gen', spec_int_base: 40000, tdp: 205 },
-  { id: '44', name: 'Intel Xeon Gold 5418Y', cores: 24, frequency: '2.0 GHz', generation: '5th Gen', spec_int_base: 35000, tdp: 185 },
-  { id: '45', name: 'Intel Xeon Gold 5418N', cores: 24, frequency: '1.8 GHz', generation: '5th Gen', spec_int_base: 35000, tdp: 165 },
-  { id: '46', name: 'Intel Xeon Gold 5416S', cores: 16, frequency: '2.0 GHz', generation: '5th Gen', spec_int_base: 25000, tdp: 150 },
-  { id: '47', name: 'Intel Xeon Gold 5415+', cores: 8, frequency: '2.9 GHz', generation: '5th Gen', spec_int_base: 15000, tdp: 150 },
-  { id: '48', name: 'Intel Xeon Gold 5412U', cores: 24, frequency: '2.1 GHz', generation: '5th Gen', spec_int_base: 35000, tdp: 185 },
-  { id: '49', name: 'Intel Xeon Gold 5411N', cores: 24, frequency: '1.9 GHz', generation: '5th Gen', spec_int_base: 32000, tdp: 165 },
-  { id: '50', name: 'Intel Xeon Bronze 3408U', cores: 8, frequency: '1.8 GHz', generation: '5th Gen', spec_int_base: 8500, tdp: 125 },
-  { id: '51', name: 'Intel Xeon Silver 4509Y', cores: 8, frequency: '2.6 GHz', generation: '5th Gen', spec_int_base: 12000, tdp: 125 }
-];
 
 interface Processor {
   id: string;
@@ -154,11 +99,25 @@ const VirtualizationCalculator = () => {
   });
 
   useEffect(() => {
-    // Usar a lista local de processadores em vez de buscar do Supabase
-    setProcessors(VIRTUALIZATION_PROCESSORS);
-    if (VIRTUALIZATION_PROCESSORS.length > 0) {
-      setSelectedProcessor(VIRTUALIZATION_PROCESSORS[0]);
-    }
+    const fetchProcessors = async () => {
+      const { data, error } = await supabase
+        .from('processors')
+        .select('*')
+        .order('generation', { ascending: true })
+        .order('spec_int_base', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching processors:', error);
+        return;
+      }
+
+      setProcessors(data);
+      if (data.length > 0) {
+        setSelectedProcessor(data[0]);
+      }
+    };
+
+    fetchProcessors();
   }, []);
 
   const addVM = () => {
