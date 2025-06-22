@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Server as ServerTower, Cpu, Database, HardDrive, Network, Box, DatabaseIcon, Layers } from 'lucide-react';
+import { Server as ServerTower, Cpu, Database, HardDrive, Network, Box, DatabaseIcon, Layers, Calculator } from 'lucide-react';
 import ServerCalculator from './components/ServerCalculator';
 import VirtualizationCalculator from './components/VirtualizationCalculator';
 import BackupCalculator from './components/BackupCalculator';
@@ -7,20 +7,20 @@ import StorageCalculator from './components/StorageCalculator';
 import VsanCalculator from './components/VsanCalculator';
 import NutanixCalculator from './components/NutanixCalculator';
 import SapHanaCalculator from './components/SapHanaCalculator';
-import S2DCalculator from './components/S2DCalculator';
+import S2DVolumetriaCalculator from './components/S2DVolumetriaCalculator';
 import CohesityBackupSizing from './components/CohesityBackupSizing';
 import Header from './components/Header';
 import Login from './components/Login';
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'physical' | 'virtual' | 'backup' | 'storage' | 'vsan' | 'nutanix' | 'sap' | 's2d' | 'cohesity'>('physical');
+  const [activeTab, setActiveTab] = useState<'physical' | 'virtual' | 'backup' | 'storage' | 'vsan' | 'nutanix' | 'sap' | 's2d-volumetria' | 'cohesity'>('physical');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const handleLogin = (email: string, password: string) => {
     setIsAuthenticated(true);
   };
 
-  const handleTabChange = (tab: 'physical' | 'virtual' | 'backup' | 'storage' | 'vsan' | 'nutanix' | 'sap' | 's2d' | 'cohesity') => {
+  const handleTabChange = (tab: 'physical' | 'virtual' | 'backup' | 'storage' | 'vsan' | 'nutanix' | 'sap' | 's2d-volumetria' | 'cohesity') => {
     setActiveTab(tab);
   };
 
@@ -92,15 +92,15 @@ function App() {
                 Nutanix
               </button>
               <button
-                onClick={() => handleTabChange('s2d')}
+                onClick={() => handleTabChange('s2d-volumetria')}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm font-medium transition-all ${
-                  activeTab === 's2d'
+                  activeTab === 's2d-volumetria'
                     ? 'bg-blue-600 shadow-sm shadow-blue-500/30'
                     : 'bg-slate-800/50 hover:bg-slate-700/50'
                 }`}
               >
-                <Layers size={16} />
-                S2D
+                <Calculator size={16} />
+                S2D Volumetria
               </button>
               <button
                 onClick={() => handleTabChange('cohesity')}
@@ -145,7 +145,7 @@ function App() {
               {activeTab === 'vsan' && <VsanCalculator />}
               {activeTab === 'nutanix' && <NutanixCalculator />}
               {activeTab === 'sap' && <SapHanaCalculator />}
-              {activeTab === 's2d' && <S2DCalculator />}
+              {activeTab === 's2d-volumetria' && <S2DVolumetriaCalculator />}
               {activeTab === 'cohesity' && <CohesityBackupSizing />}
             </div>
           </div>
